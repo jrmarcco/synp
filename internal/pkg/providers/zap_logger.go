@@ -34,7 +34,7 @@ func newLogger(lifecycle fx.Lifecycle) (*zap.Logger, error) {
 		return nil, err
 	}
 
-	// 初始化 slog
+	// 初始化 slog。
 	slog.SetDefault(slog.New(zapslog.NewHandler(logger.Core())))
 
 	lifecycle.Append(fx.Hook{

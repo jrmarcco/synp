@@ -51,7 +51,7 @@ func main() {
 		providers.MessageHandlerFxModule,
 
 		// 初始化 upgrader。
-		ws.WsUpgraderFxModule,
+		ws.UpgraderFxModule,
 
 		// 初始化 conn lifecycle handler 。
 		lifecycle.ConnLcHandlerFxModule,
@@ -68,7 +68,7 @@ func loadConfig() error {
 	viper.AddConfigPath("config")
 	viper.SetConfigType("yaml")
 
-	// 读取基础配置
+	// 读取基础配置。
 	viper.SetConfigName("base")
 	if err := viper.ReadInConfig(); err != nil {
 		return fmt.Errorf("failed to read base config: %w", err)

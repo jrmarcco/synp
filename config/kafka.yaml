@@ -2,15 +2,15 @@
 kafka:
   # Kafka Broker
   brokers:
-    - "192.168.3.3:19092"
-    - "192.168.3.3:29092"
-    - "192.168.3.3:39092"
+    - 192.168.3.3:19092
+    - 192.168.3.3:29092
+    - 192.168.3.3:39092
 
   # Producer 配置
   producer:
     required_acks: -1            # all
     compression: snappy          # 使用 snappy 压缩
-    max_message_bytes: 1024000   # 最大消息大小 1024000字节 = 1MB
+    max_message_bytes: 1024000   # 最大消息大小 1024000 字节 = 1MB
     retry_max: 3                 # 最大重试次数 3
     batch_size: 100              # 批量大小 100
     batch_timeout: 10ms          # 批量超时 10ms
@@ -21,55 +21,109 @@ kafka:
   consumer:
     read_timeout: 10s            # 读取超时 10s
     commit_interval: 1s          # 每秒提交一次
-    start_offset: -1             # 从最新消息开始（kafka.LastOffset）
+    start_offset: -1             # 从最新消息开始 ( kafka.LastOffset )
     min_bytes: 1                 # 最小 1 字节
     max_bytes: 10e6              # 最大 10MB
     max_wait: 500ms              # 最大等待 500ms
 
   # TLS 配置
   tls:
-    # CA 证书文件路径（必需）
-    ca: |
+    # 必填: CA 证书文件路径
+    ca_cert: |
       -----BEGIN CERTIFICATE-----
-      MIIDqTCCApGgAwIBAgIURgmgT+uaPMN9otpB7ZX7L5OOPt8wDQYJKoZIhvcNAQEL
+      MIIDqTCCApGgAwIBAgIUAmIaBsnW02M2Khva2axHLYWBkY4wDQYJKoZIhvcNAQEL
       BQAwZDERMA8GA1UEAwwIa2Fma2EtY2ExDjAMBgNVBAsMBUthZmthMQ4wDAYDVQQK
       DAVLYWZrYTEQMA4GA1UEBwwHQmVpamluZzEQMA4GA1UECAwHQmVpamluZzELMAkG
-      A1UEBhMCQ04wHhcNMjUxMjIyMDg1OTQxWhcNMzUxMjIwMDg1OTQxWjBkMREwDwYD
+      A1UEBhMCQ04wHhcNMjYwMTE5MTUzMTM4WhcNMzYwMTE3MTUzMTM4WjBkMREwDwYD
       VQQDDAhrYWZrYS1jYTEOMAwGA1UECwwFS2Fma2ExDjAMBgNVBAoMBUthZmthMRAw
       DgYDVQQHDAdCZWlqaW5nMRAwDgYDVQQIDAdCZWlqaW5nMQswCQYDVQQGEwJDTjCC
-      ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKRdnO0dDinasFK115zo1GkL
-      ZY75a7HzWh7qMkrlnWkFmy/Ow2HSBmqzMUx1Mojexoi+UNo991KqlXZiHJZb3VeQ
-      eLm13rAh6z8/garZ3ii3nIipQ66uvOdq5jrS77fy/BJPOBcSWSAjyCzOmS3LwvZV
-      cdTYDwlqQt6s6e9Yox+ilwRsWojwA7MLbGibJOWR0O7Tz27b2xcYXNcFOXqKEoHb
-      RYyfkySqwG2nclGSK0/H1KvTFvbqqBZSSxEkum2Nos5YAe5cZrguJxF7GkuC0vh5
-      DmfoYGg2NeeyAswZnOs+564XifmPKwPDF2N2QCTGG8o5kij0f8L1+QZXwdR+eu8C
-      AwEAAaNTMFEwHQYDVR0OBBYEFHJxO3fsdiyVKNftZo/W0VIbesEtMB8GA1UdIwQY
-      MBaAFHJxO3fsdiyVKNftZo/W0VIbesEtMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
-      hvcNAQELBQADggEBAGvYFJPqpVvtmxV9O+mhdl/az1hbKyDHBmC4M0/GnMxAb3mQ
-      gQ8w7TKBk1O7ugzyHWS/igZswEDPm8lSYOixnrIQ0bdw1cQ04yeD/oTDdAcYSl3V
-      7dL9poRx5ttIdrAM6wJw3Sm2J4EeI+evRjgR+lDdU+WDqakdm6Q0Lwp3PtNhx/a6
-      5aObEkwZZU6HG0c5gDkHj9oPQVAPiDKHgXdVjSed+N5IiYAM/L5yq4ffYvN8EaEi
-      4cVlpKQK14rSpr0bHF8h1rJN2/P1UxfE/BiCciE6VkUQPwQrjm8nGM9Z24FiRyPo
-      q2lEqwnO7P2uLOb+JiSz8r42/GsToZKABqno8eg=
+      ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKESyEG467CJ9j8NsVhpIgEl
+      L0rAnn/9uiF7xDRo33D6IRuGqrt07VbBFS9nRYTmKo5Ky8DxuQFl+WQ9IXJWpaD0
+      vo8JLdhbwQwGssmQuykbBN4eHmM8ofJyCEU5YBS8tQ3MQVyWzoE97I+pZEhqOkmv
+      FhNJ10+1hIRFw9BKsiH8pLcW2NZAkwR1Ol/KHy6FzFUxgqLdWeaQOv0pejKwMW1n
+      b7mlelXZP3VTPSb7lv2SuKPvhhVFagBvVRl8B/lkiSzhDtcr4w2QmMalqpWGNjCH
+      8RRxD00zA0PWoInekIByY2SFwybPthmKN+cWkjWc2w3yuUy3bCTzxlNTV4twvisC
+      AwEAAaNTMFEwHQYDVR0OBBYEFPqAY9DvxQUvzWnVi9bnn/F9uB5FMB8GA1UdIwQY
+      MBaAFPqAY9DvxQUvzWnVi9bnn/F9uB5FMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+      hvcNAQELBQADggEBAGxMkS6H9ALZjZJjnSa5ZrmpDlYJ6ACSNroSeViDZGeKUrgY
+      ru0cCqN1bafB7JwcAU/0xZ7vam/oG4U9RWplQNMWN6mXsghhpkp3y0EblLfgjNSN
+      8xlqy3NxI6zuPW0qnt8zYVKmJpYbB8LISioo+Sb8CaWyCwxyPLNdOp5Gj4qmey51
+      2TEJuYIhKNosx+8TJF7fkKzsdU460XFHr9rHMtQOTrmycju9Qx2LpCXbVuNqhJUe
+      IJ3YbmMrK0yLxQgNMBbQjZ+tREKe6+SIRFDxJVJ3U1skUySKfAurDaA2ui4zsCcv
+      tT0rFdjzRkV7BhHmpfoKKHvzrJw2+xJ11lTRaBk=
       -----END CERTIFICATE-----
+
+    cert_key: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCWP8Pxhl6HbPGU
+      TrlVghVMVGR7FMpOFcScsRbVp0rKCsr0TwBMQ3o4CeN3YpHa/mZF6Vw2uMEP/kal
+      g/7WKhCZWycxZ7BbwsldPGjBFxSx+sGxWIdOjdFBAlBWBeLfMkx/cf4dfyyh3orz
+      dXXibT4CRSYqNLOmutJsALg0/+UAwvwEWN9cZiLNFwgICeCzo9vXW4/vUT2oBxhn
+      krVLRas9FewI34I0Mo5npYEtMJzXKOaes8k6JpdEvmGjoCY5FG18RJ4GkhAobmPC
+      2B3d5dHdnj6A3Q5k3jVdYhlW+uKxb/1iu3r/XJU4FDLkBG1lnEhOpn8qALikdp4F
+      9YafX+0jAgMBAAECggEAR/BiDjuq+Sa1iLAk1wdA0Vo6/h+XOcn8aJX1+/hsu85t
+      HIrS9rD8TOaXLetZMMTMDT9NsrnFXrX993P6yWo8pmDZpDMkYtsh9O1ers0xUIJi
+      yVo89uS6Q2krM/T/iqSXshHPfSoOIbbfSvB7sB1kKkwXmO/A8NzUsXequ12mtTTr
+      ATcJszy5P5G/1di0N/yh13O4NdC+C3pbIxIY5TawHLsX2o/2SQPsxFHLmLu+jioA
+      izRG87RrO0D7oDTZZqbopTi+C6AWGhxnph3iNoQd4cSuaXowdCVqGumDeDT9R0du
+      2wL5lAgXlQQ9HIiGOx15vCBvz/JjneVh9EWxkl2vAQKBgQC/1+bbn/YqltWNWgdD
+      zsGBi9OWAo8ai17v0jBg/2Tzu0+/K8NDd23p04rBxHMRB6QAqZfpRwMv/b6kso7s
+      zIYgTYHzM0Ar0VmhQG0Vu5+XIt7KoEG9JnoL2uiN7rXyrz+1wdMzYYlO9IwVGZHs
+      NDzEuf9PVi3l6ub/yILHbJiFowKBgQDIfuSdgHyP45qUw+Ls57+9BKnT8YgGzP7o
+      u6cjCK5canS516M5yyp15QW1Q5fBIliVq3LoEUOSfIpQ+Q79/JBlUFyDxthA61BN
+      G1/HXJhyG+7w1kw/WYsRL+IOxl8tzCiLa6riMTMtv0U7wAHyOrd+m3rtrTd51mzX
+      JatqdRZygQKBgQC+YfZ6kj5reZCoXGXFRxQGCcuKnTOC9jja6s6UFCANOSAk6bs3
+      4vezCvoy3VAL4HdDKQrWuGBTag+dxo3MNhQNTp3dykius22tdxBKdw4joLlUgMF8
+      gwivZylOYU0zb/Nb3uRHo03uiwXRkrSboiOEX8kc5Ltb5kgkIsqWOhEK3QKBgQCu
+      kkYumVxb0Nqco37ntdWuF+xjHU/KVB2zuQiLKZjf4NVnp0l5HdwHsPTqYkM1J9mn
+      4BN52uZSGtw4KtOR9KIphPI4zx8mT32o1afsp0QZPxcqXf0fv7Cls2KKaNEgyD2Z
+      P5MXxa0BLSR0JPfM2LFCrNA5OHQwQrKcFjGNzQtRgQKBgDwMh7IMTvhNoOvQdRAy
+      58rMKatjcIUP7M5YO16T1ezSjgf0r0oBof1AIBMzWyshkpdHZ/7kGFFOVDXM0Pre
+      GyakRH+l3SCneIeCRofif8c69W3DHE6D7Vj5a2xMBJk5SYVjpW62fJb5xYSfymTx
+      XbkIgeZ3XYL6mh5fi+jfKMnL
+      -----END PRIVATE KEY-----
+
+    cert_pem: |
+      -----BEGIN CERTIFICATE-----
+      MIIDUzCCAjsCFCBctINGPkegPBc9qiR8acNZ1BBpMA0GCSqGSIb3DQEBCwUAMGQx
+      ETAPBgNVBAMMCGthZmthLWNhMQ4wDAYDVQQLDAVLYWZrYTEOMAwGA1UECgwFS2Fm
+      a2ExEDAOBgNVBAcMB0JlaWppbmcxEDAOBgNVBAgMB0JlaWppbmcxCzAJBgNVBAYT
+      AkNOMB4XDTI2MDExOTE1MzE0MFoXDTM2MDExNzE1MzE0MFowaDELMAkGA1UEBhMC
+      Q04xEDAOBgNVBAgTB0JlaWppbmcxEDAOBgNVBAcTB0JlaWppbmcxDjAMBgNVBAoT
+      BUthZmthMQ4wDAYDVQQLEwVLYWZrYTEVMBMGA1UEAxMMa2Fma2EtY2xpZW50MIIB
+      IjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlj/D8YZeh2zxlE65VYIVTFRk
+      exTKThXEnLEW1adKygrK9E8ATEN6OAnjd2KR2v5mRelcNrjBD/5GpYP+1ioQmVsn
+      MWewW8LJXTxowRcUsfrBsViHTo3RQQJQVgXi3zJMf3H+HX8sod6K83V14m0+AkUm
+      KjSzprrSbAC4NP/lAML8BFjfXGYizRcICAngs6Pb11uP71E9qAcYZ5K1S0WrPRXs
+      CN+CNDKOZ6WBLTCc1yjmnrPJOiaXRL5ho6AmORRtfESeBpIQKG5jwtgd3eXR3Z4+
+      gN0OZN41XWIZVvrisW/9Yrt6/1yVOBQy5ARtZZxITqZ/KgC4pHaeBfWGn1/tIwID
+      AQABMA0GCSqGSIb3DQEBCwUAA4IBAQA3A7/mGp7V8ubGVcTAKMivRfdhdwChpNDm
+      BeALt8Aw1AVs5avLcwpox/gk6W4Uehj8Stz9smzqkRnkcs3ML0wjdR+RgKA/lZNh
+      raCOEvS8iUrivCbWVmVVx1lnIulm8rk5yPf/SG2nZU89irIFXuJmF1Do38ZfsRDI
+      1gWPnA3szwlI3YMAn0l6lgmHbVpS8W6hjAo7ty7uqfEVL4GA6Idvfqo5MhiCil7j
+      JhSmu413TOPgtiQPqoOzHm4T7tRQVwvxvdKoFJ0kmqZxR8NiK50qjNXL3LYYLTHg
+      HbKX4wo5ENhr8UB6RfPf+o4XUWoUz01iqwVT4rClJMH9d9sSnvwS
+      -----END CERTIFICATE-----
+
+
   # SASL 配置
   # 支持两种认证机制：
-  # 1. SCRAM-SHA-256 (默认)
+  # 1. SCRAM-SHA-256
   # 2. OAUTHBEARER
   sasl:
-    # 认证机制类型 (可选，默认为 "scram")
-    mechanism: "oauth"  # 或 "scram"
+    # 可选：认证机制类型 ( "" / oauth / scram 默认为 "" )
+    # mechanism: oauth
 
-    # SCRAM 认证配置 (当 mechanism 为 "scram" 或未设置时使用)
-    # username: "synp"
-    # password: "synp-secret"
-    # 提示：建议使用环境变量存储密码
-    # password: "${KAFKA_PASSWORD}"
+    # SCRAM 认证配置 ( 当 mechanism 为 scram 或未设置时使用 )
+    # username: synp
+    # password: synp-secret
+    # 建议使用环境变量存储密码
+    # password: ${KAFKA_PASSWORD}
 
-    # OAuth 认证配置 (当 mechanism 为 "oauth" 时使用)
-    oauth:
-      endpoint: http://192.168.3.3:18080/realms/kafka/protocol/openid-connect/token
-      client_id: kafka-client
-      client_secret: b7rQYTc0y3eqDkGXFYD2UIPjYJeFCaAC
-      # 提示：建议使用环境变量存储敏感信息
-      # client_secret: "${KAFKA_OAUTH_CLIENT_SECRET}"
+    # OAuth 认证配置 ( 当 mechanism 为 oauth 时使用 )
+    # oauth:
+      # endpoint: http://192.168.3.3:18080/realms/kafka/protocol/openid-connect/token
+      # client_id: kafka-client
+      # client_secret: b7rQYTc0y3eqDkGXFYD2UIPjYJeFCaAC
+      # 建议使用环境变量存储敏感信息
+      # client_secret: ${KAFKA_OAUTH_CLIENT_SECRET}

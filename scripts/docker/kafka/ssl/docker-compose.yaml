@@ -26,12 +26,6 @@ x-kafka-common: &kafka-common
     KAFKA_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS: 5000
     KAFKA_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS: 5000
 
-    # KAFKA_SSL_KEYSTORE_FILENAME: 'kafka01.keystore.jks'
-    # KAFKA_SSL_KEYSTORE_CREDENTIALS: 'kafka_keystore_creds'
-    # KAFKA_SSL_KEY_CREDENTIALS: 'kafka_ssl_key_creds'
-    # KAFKA_SSL_TRUSTSTORE_FILENAME: 'kafka.truststore.jks'
-    # KAFKA_SSL_TRUSTSTORE_CREDENTIALS: 'kafka_truststore_creds'
-
     # SSL 配置
     KAFKA_SSL_KEY_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
     KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/certs/kafka.server.keystore.jks
@@ -139,9 +133,9 @@ services:
 
       # SSL 配置
       KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL
-      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION: /etc/kafka/certs/kafka.server.keystore.jks
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION: /etc/kafka/certs/kafka.client.keystore.jks
       KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
-      KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: /etc/kafka/certs/kafka.server.truststore.jks
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: /etc/kafka/certs/kafka.client.truststore.jks
       KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
       KAFKA_CLUSTERS_0_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
     volumes:

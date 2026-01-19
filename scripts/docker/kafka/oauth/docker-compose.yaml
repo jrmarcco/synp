@@ -97,11 +97,26 @@ x-kafka-common: &kafka-common
     KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
 
     # 集群副本配置
+    #
+    # 基本原则
+    # - 副本因子 ≥ 3 ( 确保高可用性 )
+    # - MIN_ISR = 副本因子 - 1 ( 允许一个副本故障仍可写入 )
+    # - 不要所有主题都设为 1 ( 系统主题故障会导致集群不稳定 )
+    #
+    # KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR 控制 __consumer_offsets ( 存储消费者组偏移量的内部主题 ) 主题的副本因子
+    # - 建议设置为至少 2 或 3 以确保高可用
+    # - 如果集群有多个 broker 可以设置为 3
     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    # KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS 消费者组初始重平衡的延迟时间 ( 默认 3000ms )
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 3000
+    # KAFKA_TRANSACTION_STATE_LOG_MIN_ISR 事务状态日志的最小 ISR 数量 ( 确定事务主题需要至少多少个副本同步写入才算成功 )
     KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
-    KAFKA_MIN_INSYNC_REPLICAS: 2
+    # KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR 事务状态主题的副本因子 ( 用于 Kafka 事务功能确保事务状态的高可用性 )
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    # KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR 共享组协调器状态主题的副本因子 ( 用于 Kafka 共享消费组功能 )
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 3
+    # KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR 共享组协调器状态主题的最小 ISR 数量 ( 控制共享消费组元数据的可用性 )
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 2
 
     # 日志目录
     KAFKA_LOG_DIRS: /var/lib/kafka/data

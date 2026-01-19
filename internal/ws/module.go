@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var WsUpgraderFxModule = fx.Module(
+var UpgraderFxModule = fx.Module(
 	"ws-upgrader",
 	fx.Provide(
 		fx.Annotate(

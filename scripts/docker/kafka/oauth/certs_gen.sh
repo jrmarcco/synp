@@ -62,7 +62,7 @@ openssl req -new -x509 -keyout ${CERTS_DIR}/ca-key -out ${CERTS_DIR}/ca-cert -da
     -passout pass:${PASSWORD}
 
 
-# 2. 创建共享的密钥库和信任库（用于简化配置）
+# 2. 创建共享的密钥库和信任库 ( 用于简化配置 )
 echo ">>> 创建共享的服务器密钥库..."
 keytool -keystore ${CERTS_DIR}/kafka.server.keystore.jks \
     -alias kafka \
