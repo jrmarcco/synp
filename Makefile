@@ -1,8 +1,8 @@
 # initialize project environment
 .PHONY: setup
 setup:
-	@sh ./scripts/setup-env.sh
-	@sh ./scripts/setup-hook.sh
+	@sh ./scripts/setup_env.sh
+	@sh ./scripts/setup_hook.sh
 
 # format code
 .PHONY: fmt

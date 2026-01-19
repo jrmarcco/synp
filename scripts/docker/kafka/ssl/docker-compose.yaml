@@ -1,0 +1,162 @@
+x-kafka-common: &kafka-common
+  image: apache/kafka:latest
+  restart: unless-stopped
+  networks:
+    - jrmarcco_net
+  healthcheck:
+    test: ["CMD-SHELL", "ps aux | grep -q 'kafka.Kafka' && test -f /var/lib/kafka/data/meta.properties || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+  environment: &kafka-common-env
+    # 集群配置
+    CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9094,2@kafka-2:9094,3@kafka-3:9094
+
+    # 通信配置
+    KAFKA_SECURITY_PROTOCOL: SSL
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:SSL,EXTERNAL:SSL
+
+    # Controller Quorum 超时配置 ( 避免选举冲突和频繁变更 )
+    KAFKA_CONTROLLER_QUORUM_ELECTION_TIMEOUT_MS: 10000
+    KAFKA_CONTROLLER_QUORUM_ELECTION_BACKOFF_MAX_MS: 5000
+    KAFKA_CONTROLLER_QUORUM_FETCH_TIMEOUT_MS: 5000
+    KAFKA_CONTROLLER_QUORUM_REQUEST_TIMEOUT_MS: 5000
+
+    # KAFKA_SSL_KEYSTORE_FILENAME: 'kafka01.keystore.jks'
+    # KAFKA_SSL_KEYSTORE_CREDENTIALS: 'kafka_keystore_creds'
+    # KAFKA_SSL_KEY_CREDENTIALS: 'kafka_ssl_key_creds'
+    # KAFKA_SSL_TRUSTSTORE_FILENAME: 'kafka.truststore.jks'
+    # KAFKA_SSL_TRUSTSTORE_CREDENTIALS: 'kafka_truststore_creds'
+
+    # SSL 配置
+    KAFKA_SSL_KEY_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
+    KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/certs/kafka.server.keystore.jks
+    KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
+    KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/certs/kafka.server.truststore.jks
+    KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
+    KAFKA_SSL_CLIENT_AUTH: 'required'
+    KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+
+    # 集群副本配置
+    #
+    # 基本原则
+    # - 副本因子 ≥ 3 ( 确保高可用性 )
+    # - MIN_ISR = 副本因子 - 1 ( 允许一个副本故障仍可写入 )
+    # - 不要所有主题都设为 1 ( 系统主题故障会导致集群不稳定 )
+    #
+    # KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR 控制 __consumer_offsets ( 存储消费者组偏移量的内部主题 ) 主题的副本因子
+    # - 建议设置为至少 2 或 3 以确保高可用
+    # - 如果集群有多个 broker 可以设置为 3
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    # KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS 消费者组初始重平衡的延迟时间 ( 默认 3000ms )
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 3000
+    # KAFKA_TRANSACTION_STATE_LOG_MIN_ISR 事务状态日志的最小 ISR 数量 ( 确定事务主题需要至少多少个副本同步写入才算成功 )
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    # KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR 事务状态主题的副本因子 ( 用于 Kafka 事务功能确保事务状态的高可用性 )
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    # KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR 共享组协调器状态主题的副本因子 ( 用于 Kafka 共享消费组功能 )
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 3
+    # KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR 共享组协调器状态主题的最小 ISR 数量 ( 控制共享消费组元数据的可用性 )
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 2
+
+    # 日志目录
+    KAFKA_LOG_DIRS: /var/lib/kafka/data
+  volumes:
+    - ./certs:/etc/kafka/certs:ro
+
+networks:
+  jrmarcco_net:
+    external: true
+
+services:
+  kafka-1:
+    <<: *kafka-common
+    hostname: kafka-1
+    container_name: kafka-1
+    ports:
+      - "19092:9092"
+    environment:
+      <<: *kafka-common-env
+      # 节点特定配置
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: CONTROLLER://kafka-1:9094,INTERNAL://kafka-1:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9093,EXTERNAL://${KAFKA_EXTERNAL_IP}:19092
+    volumes:
+      - ./certs:/etc/kafka/certs:ro
+      - ./kafka-1-data:/var/lib/kafka/data
+
+  kafka-2:
+    <<: *kafka-common
+    hostname: kafka-2
+    container_name: kafka-2
+    ports:
+      - "29092:9092"
+    environment:
+      <<: *kafka-common-env
+      # 节点特定配置
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: CONTROLLER://kafka-2:9094,INTERNAL://kafka-2:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9093,EXTERNAL://${KAFKA_EXTERNAL_IP}:29092
+    volumes:
+      - ./certs:/etc/kafka/certs:ro
+      - ./kafka-2-data:/var/lib/kafka/data
+
+  kafka-3:
+    <<: *kafka-common
+    hostname: kafka-3
+    container_name: kafka-3
+    ports:
+      - "39092:9092"
+    environment:
+      <<: *kafka-common-env
+      # 节点特定配置
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: CONTROLLER://kafka-3:9094,INTERNAL://kafka-3:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9093,EXTERNAL://${KAFKA_EXTERNAL_IP}:39092
+    volumes:
+      - ./certs:/etc/kafka/certs:ro
+      - ./kafka-3-data:/var/lib/kafka/data
+
+  # Kafka UI - Web 管理界面
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    hostname: kafka-ui
+    container_name: kafka-ui
+    restart: unless-stopped
+    ports:
+      - "18081:8080"
+    environment:
+      AUTH_TYPE: LOGIN_FORM
+      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER}
+      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD}
+
+      KAFKA_CLUSTERS_0_NAME: kafka-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+
+      # SSL 配置
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION: /etc/kafka/certs/kafka.server.keystore.jks
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_PASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION: /etc/kafka/certs/kafka.server.truststore.jks
+      KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD: ${KAFKA_TLS_KEY_PASSWORD}
+      KAFKA_CLUSTERS_0_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+    volumes:
+      - ./certs:/etc/kafka/certs:ro
+    networks:
+      - jrmarcco_net
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
