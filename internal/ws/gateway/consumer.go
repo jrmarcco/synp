@@ -23,7 +23,12 @@ type Consumer struct {
 	logger *zap.Logger
 }
 
-func NewConsumer(consumerFactory xconsumer.ConsumerFactory, topic, groupID string, partitions int32, logger *zap.Logger) *Consumer {
+func NewConsumer(
+	consumerFactory xconsumer.ConsumerFactory,
+	topic, groupID string,
+	partitions int32,
+	logger *zap.Logger,
+) *Consumer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Consumer{
