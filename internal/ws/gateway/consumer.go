@@ -23,6 +23,23 @@ type Consumer struct {
 	logger *zap.Logger
 }
 
+func NewConsumer(consumerFactory xconsumer.ConsumerFactory, topic, groupID string, partitions int32, logger *zap.Logger) *Consumer {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &Consumer{
+		consumerFactory: consumerFactory,
+
+		topic:      topic,
+		groupID:    groupID,
+		partitions: partitions,
+
+		ctx:        ctx,
+		cancelFunc: cancel,
+
+		logger: logger,
+	}
+}
+
 func (c *Consumer) Start(ctx context.Context, consumeFunc ConsumeFunc) error {
 	for i := range c.partitions {
 		partition := i
@@ -42,7 +59,7 @@ func (c *Consumer) Start(ctx context.Context, consumeFunc ConsumeFunc) error {
 		msgChan, err := consumer.ConsumeChan(ctx)
 		if err != nil {
 			c.logger.Error(
-				"[synp-gateway-consumer] failed to get message channel from mq",
+				"[synp-gateway-consumer] failed to get message channel",
 				zap.String("topic", c.topic),
 				zap.String("group_id", c.groupID),
 				zap.Int32("partition", partition),
@@ -89,21 +106,4 @@ func (c *Consumer) consume(ctx context.Context, msgChan <-chan *xmq.Message, con
 func (c *Consumer) Stop() error {
 	c.cancelFunc()
 	return nil
-}
-
-func NewConsumer(consumerFactory xconsumer.ConsumerFactory, topic, groupID string, partitions int32, logger *zap.Logger) *Consumer {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	return &Consumer{
-		consumerFactory: consumerFactory,
-
-		topic:      topic,
-		groupID:    groupID,
-		partitions: partitions,
-
-		ctx:        ctx,
-		cancelFunc: cancel,
-
-		logger: logger,
-	}
 }

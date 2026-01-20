@@ -53,6 +53,26 @@ type KafkaConsumer struct {
 	closeOnce sync.Once
 }
 
+func NewKafkaConsumer(topic, groupID string, readerCreateFunc KafkaReaderCreateFunc) *KafkaConsumer {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	reader := readerCreateFunc(topic, groupID)
+	consumer := &KafkaConsumer{
+		topic:   topic,
+		groupID: groupID,
+
+		reader: reader,
+
+		messageChan: make(chan *xmq.Message, defaultMessageChanSize),
+
+		ctx:        ctx,
+		cancelFunc: cancel,
+	}
+
+	go consumer.readMessage()
+	return consumer
+}
+
 func (c *KafkaConsumer) Consume(ctx context.Context) (*xmq.Message, error) {
 	select {
 	case <-c.ctx.Done():
@@ -127,24 +147,4 @@ func (c *KafkaConsumer) Close() error {
 		err = c.reader.Close()
 	})
 	return err
-}
-
-func NewKafkaConsumer(topic, groupID string, readerCreateFunc KafkaReaderCreateFunc) *KafkaConsumer {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	reader := readerCreateFunc(topic, groupID)
-	consumer := &KafkaConsumer{
-		topic:   topic,
-		groupID: groupID,
-
-		reader: reader,
-
-		messageChan: make(chan *xmq.Message, defaultMessageChanSize),
-
-		ctx:        ctx,
-		cancelFunc: cancel,
-	}
-
-	go consumer.readMessage()
-	return consumer
 }

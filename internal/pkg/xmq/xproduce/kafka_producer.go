@@ -14,6 +14,12 @@ type KafkaProducer struct {
 	writer *kafka.Writer
 }
 
+func NewKafkaProducer(writer *kafka.Writer) *KafkaProducer {
+	return &KafkaProducer{
+		writer: writer,
+	}
+}
+
 func (p *KafkaProducer) Produce(ctx context.Context, msg *xmq.Message) error {
 	err := p.writer.WriteMessages(ctx, kafka.Message{
 		Topic: msg.Topic,
@@ -31,10 +37,4 @@ func (p *KafkaProducer) Produce(ctx context.Context, msg *xmq.Message) error {
 		"message", string(msg.Val),
 	)
 	return nil
-}
-
-func NewKafkaProducer(writer *kafka.Writer) *KafkaProducer {
-	return &KafkaProducer{
-		writer: writer,
-	}
 }
