@@ -105,7 +105,6 @@ kafka:
       HbKX4wo5ENhr8UB6RfPf+o4XUWoUz01iqwVT4rClJMH9d9sSnvwS
       -----END CERTIFICATE-----
 
-
   # SASL 配置
   # 支持两种认证机制：
   # 1. SCRAM-SHA-256
