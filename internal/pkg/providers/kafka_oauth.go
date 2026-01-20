@@ -102,10 +102,11 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 		return "", fmt.Errorf("failed to get access token with status [ %d ], body: %s", resp.StatusCode, string(body))
 	}
 
+	//nolint:tagliatelle // OAuth2 标准使用 snake_case
 	var tokenRes struct {
-		AccessToken string `json:"access_token"` //nolint:tagliatelle // OAuth2 标准使用 snake_case
-		TokenType   string `json:"token_type"`   //nolint:tagliatelle // OAuth2 标准使用 snake_case
-		ExpiresIn   int    `json:"expires_in"`   //nolint:tagliatelle // OAuth2 标准使用 snake_case
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+		ExpiresIn   int    `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &tokenRes); err != nil {
 		return "", fmt.Errorf("failed to parse http response body: %w", err)
