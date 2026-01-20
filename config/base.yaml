@@ -44,7 +44,7 @@ synp:
       # downstream 消息消费者
       event_message_downstream:
         topic: event.message.downstream
-        group_id: synp-gateway-downstream
+        group_id: synp-downstream-message-consumer
         partitions: 6
 
 jwt:
