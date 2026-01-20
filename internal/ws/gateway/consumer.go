@@ -87,18 +87,16 @@ func (c *Consumer) consume(ctx context.Context, msgChan <-chan *xmq.Message, con
 				return
 			}
 
-			err := consumeFunc(ctx, msg)
-			if err != nil {
+			if err := consumeFunc(ctx, msg); err != nil {
 				c.logger.Error(
 					"[synp-gateway-consumer] failed to consume message",
+					zap.String("topic", msg.Topic),
+					zap.Int64("offset", msg.Offset),
+					zap.Int("partition", msg.Partition),
 					zap.String("message", string(msg.Val)),
 					zap.Error(err),
 				)
 			}
-			c.logger.Debug(
-				"[synp-gateway-consumer] successfully consumed message",
-				zap.String("message", string(msg.Val)),
-			)
 		}
 	}
 }
