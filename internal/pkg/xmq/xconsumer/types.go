@@ -1,4 +1,4 @@
-package consumer
+package xconsumer
 
 import (
 	"context"

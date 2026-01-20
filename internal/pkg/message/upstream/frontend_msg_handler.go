@@ -12,7 +12,7 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/codec"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/produce"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -24,7 +24,7 @@ type FrontendMsgHandler struct {
 	onReceiveTimeout time.Duration // 接收消息超时时间
 
 	codec    codec.Codec
-	producer produce.Producer
+	producer xproduce.Producer
 	pushFunc message.PushFunc
 }
 
@@ -103,7 +103,7 @@ func NewFrontendMsgHandler(
 	mqTopic string,
 	onReceiveTimeout time.Duration,
 	codec codec.Codec,
-	producer produce.Producer,
+	producer xproduce.Producer,
 	pushFunc message.PushFunc,
 ) *FrontendMsgHandler {
 	return &FrontendMsgHandler{

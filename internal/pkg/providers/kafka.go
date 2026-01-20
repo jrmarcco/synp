@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/xmq/consumer"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/scram"
@@ -21,7 +21,7 @@ type kafkaFxResult struct {
 	fx.Out
 
 	Writer           *kafka.Writer
-	ReaderCreateFunc consumer.KafkaReaderCreateFunc
+	ReaderCreateFunc xconsumer.KafkaReaderCreateFunc
 }
 
 type kafkaConfig struct {

@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
-	pkgconsumer "github.com/jrmarcco/synp/internal/pkg/xmq/consumer"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"go.uber.org/zap"
 )
 
 type ConsumeFunc func(ctx context.Context, msg *xmq.Message) error
 
 type Consumer struct {
-	consumerFactory pkgconsumer.ConsumerFactory
+	consumerFactory xconsumer.ConsumerFactory
 
 	topic      string
 	groupID    string
@@ -91,7 +91,7 @@ func (c *Consumer) Stop() error {
 	return nil
 }
 
-func NewConsumer(consumerFactory pkgconsumer.ConsumerFactory, topic, groupID string, partitions int32, logger *zap.Logger) *Consumer {
+func NewConsumer(consumerFactory xconsumer.ConsumerFactory, topic, groupID string, partitions int32, logger *zap.Logger) *Consumer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Consumer{

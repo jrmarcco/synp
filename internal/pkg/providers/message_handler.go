@@ -8,11 +8,11 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/retransmit"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/produce"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
 	"github.com/spf13/viper"
 )
 
-func newFrontendMsgHandler(codec codec.Codec, producer produce.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {
+func newFrontendMsgHandler(codec codec.Codec, producer xproduce.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {
 	type config struct {
 		Topic            string `mapstructure:"topic"`
 		OnReceiveTimeout int    `mapstructure:"on_receive_timeout"`

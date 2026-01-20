@@ -5,8 +5,8 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
-	pkgconsumer "github.com/jrmarcco/synp/internal/pkg/xmq/consumer"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/produce"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
 	"go.uber.org/fx"
 )
 
@@ -24,8 +24,8 @@ var (
 		"kafka-producer",
 		fx.Provide(
 			fx.Annotate(
-				produce.NewKafkaProducer,
-				fx.As(new(produce.Producer)),
+				xproduce.NewKafkaProducer,
+				fx.As(new(xproduce.Producer)),
 			),
 		),
 	)
@@ -33,8 +33,8 @@ var (
 		"kafka-consumer",
 		fx.Provide(
 			fx.Annotate(
-				pkgconsumer.NewKafkaConsumerFactory,
-				fx.As(new(pkgconsumer.ConsumerFactory)),
+				xconsumer.NewKafkaConsumerFactory,
+				fx.As(new(xconsumer.ConsumerFactory)),
 			),
 			newKafkaConsumers,
 		),
