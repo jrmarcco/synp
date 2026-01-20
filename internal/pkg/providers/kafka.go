@@ -92,7 +92,7 @@ func newKafkaClient(zapLogger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResul
 	}
 
 	// 配置 Kafka Dialer。
-	defaultDialTimeout := 10 * time.Second
+	const defaultDialTimeout = 10 * time.Second
 	dialer := &kafka.Dialer{
 		Timeout:   defaultDialTimeout,
 		DualStack: true,
@@ -142,9 +142,8 @@ func newKafkaClient(zapLogger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResul
 	)
 
 	// 创建 ReaderFactory，用于按需创建 Reader ( Consumer )。
-	defaultReadBackoffMin := 100 * time.Millisecond
-	defaultReadBackoffMax := 1 * time.Second
-
+	const defaultReadBackoffMin = 100 * time.Millisecond
+	const defaultReadBackoffMax = 1 * time.Second
 	readerFactory := func(topic string, groupId string) *kafka.Reader {
 		reader := kafka.NewReader(kafka.ReaderConfig{
 			Brokers:        cfg.Brokers,

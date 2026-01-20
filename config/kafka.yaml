@@ -110,7 +110,7 @@ kafka:
   # 支持两种认证机制：
   # 1. SCRAM-SHA-256
   # 2. OAUTHBEARER
-  sasl:
+  # sasl:
     # 可选：认证机制类型 ( "" / oauth / scram 默认为 "" )
     # mechanism: oauth
 
@@ -122,8 +122,8 @@ kafka:
 
     # OAuth 认证配置 ( 当 mechanism 为 oauth 时使用 )
     # oauth:
-      # endpoint: http://192.168.3.3:18080/realms/kafka/protocol/openid-connect/token
-      # client_id: kafka-client
-      # client_secret: b7rQYTc0y3eqDkGXFYD2UIPjYJeFCaAC
+    #   endpoint: http://192.168.3.3:18080/realms/kafka/protocol/openid-connect/token
+    #   client_id: kafka-client
+    #   client_secret: b7rQYTc0y3eqDkGXFYD2UIPjYJeFCaAC
       # 建议使用环境变量存储敏感信息
       # client_secret: ${KAFKA_OAUTH_CLIENT_SECRET}
