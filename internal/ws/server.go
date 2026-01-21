@@ -47,6 +47,39 @@ type Server struct {
 	logger *zap.Logger
 }
 
+func NewServer(
+	config *Config,
+	upgrader synp.Upgrader,
+	connManager synp.ConnManager,
+	connHandler synp.Handler,
+	consumers map[string]*gateway.Consumer,
+	logger *zap.Logger,
+	opts ...option.Opt[Server],
+) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Server{
+		config: config,
+
+		upgrader:    upgrader,
+		connManager: connManager,
+		connHandler: connHandler,
+
+		connLimiter: limiter.NewTokenLimiter(limiter.DefaultConfig()), // 默认令牌桶限流器。
+		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略。
+
+		consumers: consumers,
+
+		ctx:        ctx,
+		cancelFunc: cancel,
+
+		logger: logger,
+	}
+	s.acceptNewConn.Store(true)
+
+	option.Apply(s, opts...)
+	return s
+}
+
 // Start 启动 WebSocket 服务器。
 func (s *Server) Start() error {
 	// 端口启用并监听 upgrade 请求，
@@ -327,37 +360,4 @@ func (s *Server) GracefulShutdown() error {
 
 	<-s.ctx.Done()
 	return s.Shutdown()
-}
-
-func NewServer(
-	config *Config,
-	upgrader synp.Upgrader,
-	connManager synp.ConnManager,
-	connHandler synp.Handler,
-	consumers map[string]*gateway.Consumer,
-	logger *zap.Logger,
-	opts ...option.Opt[Server],
-) *Server {
-	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{
-		config: config,
-
-		upgrader:    upgrader,
-		connManager: connManager,
-		connHandler: connHandler,
-
-		connLimiter: limiter.NewTokenLimiter(limiter.DefaultConfig()), // 默认令牌桶限流器。
-		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略。
-
-		consumers: consumers,
-
-		ctx:        ctx,
-		cancelFunc: cancel,
-
-		logger: logger,
-	}
-	s.acceptNewConn.Store(true)
-
-	option.Apply(s, opts...)
-	return s
 }
