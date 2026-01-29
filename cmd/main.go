@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jrmarcco/synp/internal/app"
-	"github.com/jrmarcco/synp/internal/pkg/providers"
+	"github.com/jrmarcco/synp/internal/pkg/provider"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/conn/lifecycle"
@@ -25,30 +25,30 @@ func main() {
 		}),
 
 		// 初始化 zap.Logger。
-		providers.ZapLoggerFxModule,
+		provider.ZapLoggerFxModule,
 
 		// 初始化 redis.Cmdable。
-		providers.RedisFxModule,
+		provider.RedisFxModule,
 
 		// 初始化 kafka。
-		providers.KafkaFxModule,
-		providers.KafkaConsumerFxModule,
-		providers.KafkaProducerFxModule,
+		provider.KafkaFxModule,
+		provider.KafkaConsumerFxModule,
+		provider.KafkaProducerFxModule,
 
 		// 初始化 token validator。
-		providers.ValidatorFxModule,
+		provider.ValidatorFxModule,
 
 		// 初始化 codec。
-		providers.CodecFxModule,
+		provider.CodecFxModule,
 
 		// 初始化 message push func。
-		providers.MessagePushFuncFxModule,
+		provider.MessagePushFuncFxModule,
 
 		// 初始化 retransmit manager。
-		providers.RetransmitFxModule,
+		provider.RetransmitFxModule,
 
 		// 初始化 message handler。
-		providers.MessageHandlerFxModule,
+		provider.MessageHandlerFxModule,
 
 		// 初始化 upgrader。
 		ws.UpgraderFxModule,

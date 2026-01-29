@@ -1,11 +1,11 @@
-package providers
+package provider
 
 import (
 	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
 	"go.uber.org/fx"
 )
@@ -33,8 +33,8 @@ var (
 		"kafka-consumer",
 		fx.Provide(
 			fx.Annotate(
-				xconsumer.NewKafkaConsumerFactory,
-				fx.As(new(xconsumer.ConsumerFactory)),
+				xconsume.NewKafkaConsumerFactory,
+				fx.As(new(xconsume.ConsumerFactory)),
 			),
 			newKafkaConsumers,
 		),

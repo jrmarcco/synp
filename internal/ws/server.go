@@ -102,7 +102,7 @@ func (s *Server) Start() error {
 				s.logger.Warn("[server] consumer not found", zap.String("event", key))
 				continue
 			}
-			if err := consumer.Start(s.ctx, s.consumePushMessage); err != nil {
+			if err := consumer.StartConsumer(s.ctx, s.consumePushMessage); err != nil {
 				s.logger.Error(
 					"[server] failed to start push message consumer",
 					zap.Error(err),
@@ -115,7 +115,7 @@ func (s *Server) Start() error {
 				s.logger.Warn("[server] consumer not found", zap.String("event", key))
 				continue
 			}
-			if err := consumer.Start(s.ctx, s.consumeScaleUp); err != nil {
+			if err := consumer.StartConsumer(s.ctx, s.consumeScaleUp); err != nil {
 				s.logger.Error(
 					"[server] failed to start scale up consumer",
 					zap.Error(err),

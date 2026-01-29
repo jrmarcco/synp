@@ -1,4 +1,4 @@
-package xconsumer
+package xconsume
 
 import (
 	"context"
@@ -24,14 +24,14 @@ type KafkaConsumerFactory struct {
 	readerCreateFunc KafkaReaderCreateFunc
 }
 
-func (f *KafkaConsumerFactory) NewConsumer(topic, groupID string) (Consumer, error) {
-	return NewKafkaConsumer(topic, groupID, f.readerCreateFunc), nil
-}
-
 func NewKafkaConsumerFactory(readerCreateFunc KafkaReaderCreateFunc) *KafkaConsumerFactory {
 	return &KafkaConsumerFactory{
 		readerCreateFunc: readerCreateFunc,
 	}
+}
+
+func (f *KafkaConsumerFactory) NewConsumer(topic, groupID string) (Consumer, error) {
+	return NewKafkaConsumer(topic, groupID, f.readerCreateFunc), nil
 }
 
 var _ Consumer = (*KafkaConsumer)(nil)
