@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
@@ -28,9 +29,12 @@ func NewConsumer(
 	topic, groupID string,
 	partitions int32,
 	logger *zap.Logger,
-) *Consumer {
-	ctx, cancel := context.WithCancel(context.Background())
+) (*Consumer, error) {
+	if topic == "" || groupID == "" || partitions <= 0 {
+		return nil, fmt.Errorf("topic, groupID and partitions are required")
+	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Consumer{
 		consumerFactory: consumerFactory,
 
@@ -42,7 +46,7 @@ func NewConsumer(
 		cancelFunc: cancel,
 
 		logger: logger,
-	}
+	}, nil
 }
 
 func (c *Consumer) Start(ctx context.Context, consumeFunc ConsumeFunc) error {

@@ -39,5 +39,5 @@ func pushMessageConsumer(consumerFactory xconsumer.ConsumerFactory, logger *zap.
 		cfg.GroupID,
 		cfg.Partitions,
 		logger,
-	), nil
+	)
 }
