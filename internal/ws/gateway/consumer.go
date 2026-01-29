@@ -11,10 +11,10 @@ import (
 )
 
 type Consumer struct {
-	topic          string
-	groupID        string
-	partitions     int32
-	consumeTimeout time.Duration
+	topic         string
+	groupID       string
+	partitions    int32
+	handleTimeout time.Duration
 
 	factory   xconsume.ConsumerFactory
 	processor *xprocess.ConsumeProcessor
@@ -25,7 +25,7 @@ type Consumer struct {
 func NewConsumer(
 	topic, groupID string,
 	partitions int32,
-	consumeTimeout time.Duration,
+	handleTimeout time.Duration,
 	factory xconsume.ConsumerFactory,
 	logger *zap.Logger,
 ) (*Consumer, error) {
@@ -36,10 +36,10 @@ func NewConsumer(
 	return &Consumer{
 		factory: factory,
 
-		topic:          topic,
-		groupID:        groupID,
-		partitions:     partitions,
-		consumeTimeout: consumeTimeout,
+		topic:         topic,
+		groupID:       groupID,
+		partitions:    partitions,
+		handleTimeout: handleTimeout,
 
 		logger: logger,
 	}, nil
@@ -63,7 +63,7 @@ func (c *Consumer) StartConsumer(ctx context.Context, handler xprocess.MsgHandle
 		xprocess.ConsumeProcessorConfig{
 			Topics:        topics,
 			Handler:       handler,
-			HandleTimeout: c.consumeTimeout,
+			HandleTimeout: c.handleTimeout,
 		},
 		c.factory,
 	)

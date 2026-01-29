@@ -24,10 +24,10 @@ func newKafkaConsumers(factory xconsume.ConsumerFactory, logger *zap.Logger) (ma
 
 func pushMessageConsumer(factory xconsume.ConsumerFactory, logger *zap.Logger) (*gateway.Consumer, error) {
 	type config struct {
-		Topic          string        `mapstructure:"topic"`
-		GroupID        string        `mapstructure:"group_id"`
-		Partitions     int32         `mapstructure:"partitions"`
-		ConsumeTimeout time.Duration `mapstructure:"consume_timeout"`
+		Topic         string        `mapstructure:"topic"`
+		GroupID       string        `mapstructure:"group_id"`
+		Partitions    int32         `mapstructure:"partitions"`
+		HandleTimeout time.Duration `mapstructure:"handle_timeout"`
 	}
 
 	cfg := config{}
@@ -39,7 +39,7 @@ func pushMessageConsumer(factory xconsume.ConsumerFactory, logger *zap.Logger) (
 		cfg.Topic,
 		cfg.GroupID,
 		cfg.Partitions,
-		cfg.ConsumeTimeout,
+		cfg.HandleTimeout,
 
 		factory,
 		logger,
