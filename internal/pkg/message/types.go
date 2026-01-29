@@ -27,7 +27,7 @@ func DefaultPushFunc(codec codec.Codec) PushFunc {
 		payload, err := codec.Marshal(msg)
 		if err != nil {
 			slog.Error(
-				"[synp-message] failed to marshal message",
+				"[message] failed to marshal message",
 				"codec_name", codec.Name(),
 				"message", msg.String(),
 				"error", err,
@@ -37,7 +37,7 @@ func DefaultPushFunc(codec codec.Codec) PushFunc {
 
 		if err = conn.Send(payload); err != nil {
 			slog.Error(
-				"[synp-message] failed to send message",
+				"[message] failed to send message",
 				"conn_id", conn.ID(),
 				"error", err,
 			)

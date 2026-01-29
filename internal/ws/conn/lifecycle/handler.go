@@ -44,7 +44,7 @@ type Handler struct {
 
 func (h *Handler) OnConnect(conn synp.Conn) error {
 	h.logger.Debug(
-		"[synp-conn-lifecycle-handler] connection connected",
+		"[conn-lifecycle-handler] connection connected",
 		zap.String("conn_id", conn.ID()),
 	)
 	return nil
@@ -52,7 +52,7 @@ func (h *Handler) OnConnect(conn synp.Conn) error {
 
 func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	h.logger.Debug(
-		"[synp-conn-lifecycle-handler] connection disconnected",
+		"[conn-lifecycle-handler] connection disconnected",
 		zap.String("conn_id", conn.ID()),
 	)
 	return conn.Close()
@@ -63,7 +63,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	msg, err := h.decodePayload(payload)
 	if err != nil {
 		h.logger.Error(
-			"[synp-conn-lifecycle-handler] failed to decode payload",
+			"[conn-lifecycle-handler] failed to decode payload",
 			zap.String("conn_id", conn.ID()),
 			zap.Any("user", conn.Session().User()),
 			zap.Error(err),
@@ -76,7 +76,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	ok, err := h.cacheMessage(user.BID, msg)
 	if err != nil {
 		h.logger.Error(
-			"[synp-conn-lifecycle-handler] failed to cache message",
+			"[conn-lifecycle-handler] failed to cache message",
 			zap.String("conn_id", conn.ID()),
 			zap.Any("user", conn.Session().User()),
 			zap.Error(err),
@@ -86,7 +86,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 
 	if !ok {
 		h.logger.Warn(
-			"[synp-conn-lifecycle-handler] message duplicated, ignore it",
+			"[conn-lifecycle-handler] message duplicated, ignore it",
 			zap.String("conn_id", conn.ID()),
 			zap.String("message_id", msg.GetMessageId()),
 			zap.Any("user", conn.Session().User()),
@@ -95,7 +95,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	}
 
 	h.logger.Info(
-		"[synp-conn-lifecycle-handler] received message from frontend",
+		"[conn-lifecycle-handler] received message from frontend",
 		zap.String("conn_id", conn.ID()),
 		zap.String("message", msg.String()),
 		zap.Any("user", conn.Session().User()),
@@ -105,7 +105,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	uMsgHandler, ok := h.uMsgHandlers[msg.GetCmd()]
 	if !ok {
 		h.logger.Error(
-			"[synp-conn-lifecycle-handler] unknown message type from frontend",
+			"[conn-lifecycle-handler] unknown message type from frontend",
 			zap.String("conn_id", conn.ID()),
 			zap.Any("user", conn.Session().User()),
 		)
@@ -118,7 +118,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 			uncacheErr := h.uncacheMessage(user.BID, msg)
 			if uncacheErr != nil {
 				h.logger.Error(
-					"[synp-conn-lifecycle-handler] failed to uncache message",
+					"[conn-lifecycle-handler] failed to uncache message",
 					zap.String("conn_id", conn.ID()),
 					zap.String("message", msg.String()),
 					zap.Error(uncacheErr),

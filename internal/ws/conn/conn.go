@@ -185,7 +185,7 @@ func (c *Conn) trySend(payload []byte) bool {
 		}
 
 		c.logger.Error(
-			"[synp-conn] failed to send message to client",
+			"[conn] failed to send message to client",
 			zap.String("conn_id", c.id),
 			zap.Int("payload_len", len(payload)),
 			zap.Any("compression_state", c.compressionState),
@@ -200,7 +200,7 @@ func (c *Conn) trySend(payload []byte) bool {
 			if !ok {
 				// 重试达到上限。
 				c.logger.Error(
-					"[synp-conn] failed to resend message to client, retry reach max",
+					"[conn] failed to resend message to client, retry reach max",
 					zap.String("conn_id", c.id),
 					zap.Any("compression_state", c.compressionState),
 					zap.Any("user", c.sess.User()),
@@ -253,7 +253,7 @@ func (c *Conn) receiveLoop() {
 			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd || wsErr.Code == ws.StatusGoingAway) {
 				// 客户端关闭连接，记录日志直接返回。
 				c.logger.Debug(
-					"[synp-conn] client closed connection",
+					"[conn] client closed connection",
 					zap.String("conn_id", c.id),
 					zap.Any("compression_state", c.compressionState),
 					zap.Any("user", c.sess.User()),
@@ -263,7 +263,7 @@ func (c *Conn) receiveLoop() {
 
 			// 其他错误，直接返回。
 			c.logger.Error(
-				"[synp-conn] failed to read message from client",
+				"[conn] failed to read message from client",
 				zap.String("conn_id", c.id),
 				zap.Any("compression_state", c.compressionState),
 				zap.Any("user", c.sess.User()),

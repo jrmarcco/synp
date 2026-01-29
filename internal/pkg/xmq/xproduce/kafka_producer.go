@@ -31,7 +31,7 @@ func (p *KafkaProducer) Produce(ctx context.Context, msg *xmq.Message) error {
 	}
 
 	slog.Debug(
-		"[synp-xmq-producer] successfully produced message to kafka",
+		"[xmq-producer] successfully produced message to kafka",
 		"topic", msg.Topic,
 		"offset", msg.Offset,
 		"message", string(msg.Val),

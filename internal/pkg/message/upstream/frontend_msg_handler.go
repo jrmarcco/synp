@@ -47,7 +47,7 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 	body, err := protojson.Marshal(ackPayload)
 	if err != nil {
 		slog.Error(
-			"[synp-frontend-msg-handler] failed to marshal ack payload",
+			"[frontend-msg-handler] failed to marshal ack payload",
 			"conn_id", conn.ID(),
 			"ack_payload", ackPayload.String(),
 			"error", err,
@@ -68,7 +68,7 @@ func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
 	val, err := protojson.Marshal(msg)
 	if err != nil {
 		slog.Error(
-			"[synp-frontend-msg-handler] failed to marshal message",
+			"[frontend-msg-handler] failed to marshal message",
 			"message", msg.String(),
 			"error", err,
 		)
@@ -86,7 +86,7 @@ func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
 
 	if err := h.producer.Produce(ctx, mqMsg); err != nil {
 		slog.Error(
-			"[synp-frontend-msg-handler] failed to forward message to backend with messsage queue",
+			"[frontend-msg-handler] failed to forward message to backend with messsage queue",
 			"error", err,
 		)
 		return fmt.Errorf("failed to forward message: %w", err)

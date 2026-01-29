@@ -30,7 +30,7 @@ func newRedisCmdable(zapLogger *zap.Logger, lifecycle fx.Lifecycle) (redis.Cmdab
 		OnStart: func(ctx context.Context) error {
 			// 测试 redis 连接。
 			if err := rdb.Ping(ctx).Err(); err != nil {
-				zapLogger.Error("[synp-ioc-redis] failed to ping redis", zap.Error(err))
+				zapLogger.Error("[ioc-redis] failed to ping redis", zap.Error(err))
 				return fmt.Errorf("failed to ping redis: %w", err)
 			}
 			return nil
@@ -38,11 +38,11 @@ func newRedisCmdable(zapLogger *zap.Logger, lifecycle fx.Lifecycle) (redis.Cmdab
 		OnStop: func(_ context.Context) error {
 			// 关闭 redis 连接。
 			if err := rdb.Close(); err != nil {
-				zapLogger.Error("[synp-ioc-redis] failed to close redis", zap.Error(err))
+				zapLogger.Error("[ioc-redis] failed to close redis", zap.Error(err))
 				return fmt.Errorf("failed to close redis: %w", err)
 			}
 
-			zapLogger.Info("[synp-ioc-redis] redis closed")
+			zapLogger.Info("[ioc-redis] redis closed")
 			return nil
 		},
 	})

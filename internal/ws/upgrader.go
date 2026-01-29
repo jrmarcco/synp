@@ -48,7 +48,7 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 		params := u.compressionConfig.ToParamters()
 		ext = &wsflate.Extension{Parameters: params}
 
-		u.logger.Info("[synp-upgrader] compression enabled", zap.Any("params", params))
+		u.logger.Info("[upgrader] compression enabled", zap.Any("params", params))
 	}
 
 	var user session.User
@@ -75,7 +75,7 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 			if strings.EqualFold(string(key), "x-auto-close") {
 				autoClose = string(value) == "true"
 				u.logger.Warn(
-					"[synp-upgrader] auto close parameter parsed",
+					"[upgrader] auto close parameter parsed",
 					zap.String("header_key", string(key)),
 					zap.String("header_value", string(value)),
 					zap.Bool("auto_close", autoClose),
@@ -95,7 +95,7 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 			}
 
 			if !isNew {
-				u.logger.Warn("[synp-upgrader] session already exists", zap.Any("user", user))
+				u.logger.Warn("[upgrader] session already exists", zap.Any("user", user))
 			}
 
 			sess = createdSession
@@ -119,13 +119,13 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 			state.Params = params
 
 			u.logger.Info(
-				"[synp-upgrader] successfully negotiated compression",
+				"[upgrader] successfully negotiated compression",
 				zap.Any("negotiated_params", params),
 			)
 			return sess, &state, nil
 		}
 
-		u.logger.Warn("[synp-upgrader] failed to negotiate compression, downgrade to no compression")
+		u.logger.Warn("[upgrader] failed to negotiate compression, downgrade to no compression")
 	}
 
 	return sess, &state, nil
@@ -164,7 +164,7 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 		return device
 	default:
 		u.logger.Warn(
-			"[synp-upgrader] invalid device type, using unknown",
+			"[upgrader] invalid device type, using unknown",
 			zap.String("device", string(device)),
 		)
 		return session.DeviceUnknown
@@ -175,14 +175,14 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 func (u *Upgrader) extractUserInfo(uri []byte) (session.User, error) {
 	token, err := u.extractToken(uri)
 	if err != nil {
-		u.logger.Error("[synp-upgrader] failed to extract token from uri", zap.Error(err))
+		u.logger.Error("[upgrader] failed to extract token from uri", zap.Error(err))
 		return session.User{}, err
 	}
 
 	var user session.User
 	user, err = u.validator.Validate(context.Background(), token)
 	if err != nil {
-		u.logger.Error("[synp-upgrader] failed to validate token", zap.Error(err))
+		u.logger.Error("[upgrader] failed to validate token", zap.Error(err))
 		return session.User{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
 

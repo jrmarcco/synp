@@ -130,7 +130,7 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 	// 检查同一设备是否已有连接，如果有则关闭旧连接。
 	if _, exists := m.loadExistingConn(connKey, device); exists {
 		m.logger.Info(
-			"[synp-conn-manager] found existing connection for same device, closing old connection",
+			"[conn-manager] found existing connection for same device, closing old connection",
 			zap.String("conn_key", connKey),
 			zap.String("device", string(device)),
 			zap.Any("user", user),
@@ -148,7 +148,7 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 	// 存储连接
 	m.storeConn(connKey, device, newConn)
 	m.logger.Info(
-		"[synp-conn-manager] successfully create connection",
+		"[conn-manager] successfully create connection",
 		zap.String("conn_id", connID),
 		zap.String("device", string(device)),
 		zap.Any("user", user),
@@ -229,7 +229,7 @@ func (m *ConnManager) RemoveConn(user session.User) bool {
 			err := conn.Close()
 			if err != nil {
 				m.logger.Warn(
-					"[synp-conn-manager] failed to close connection",
+					"[conn-manager] failed to close connection",
 					zap.String("conn_id", conn.ID()),
 					zap.Error(err),
 				)

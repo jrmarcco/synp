@@ -89,22 +89,22 @@ func (l *TokenLimiter) Start(ctx context.Context) {
 	ticker := time.NewTicker(l.cfg.IncreaseInterval)
 	defer ticker.Stop()
 
-	slog.Info("[synp-limiter] start capacity increasing goroutine")
+	slog.Info("[token-limiter] start capacity increasing goroutine")
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("[synp-limiter] outter context canceled, stop capacity increasing goroutine")
+			slog.Info("[token-limiter] outter context canceled, stop capacity increasing goroutine")
 			return
 
 		case <-l.ctx.Done():
-			slog.Info("[synp-limiter] inner context canceled, stop capacity increasing goroutine")
+			slog.Info("[token-limiter] inner context canceled, stop capacity increasing goroutine")
 			return
 
 		case <-ticker.C:
 			curr := l.currCapacity.Load()
 			if curr >= l.cfg.MaxCapacity {
-				slog.Info("[synp-limiter] capacity reached max, stop capacity increasing goroutine")
+				slog.Info("[token-limiter] capacity reached max, stop capacity increasing goroutine")
 				return
 			}
 
@@ -116,7 +116,7 @@ func (l *TokenLimiter) Start(ctx context.Context) {
 			l.currCapacity.Store(newCap)
 
 			slog.Info(
-				"[synp-limiter] capacity increased",
+				"[token-limiter] capacity increased",
 				"from", curr,
 				"to", newCap,
 				"increase_step", l.cfg.IncreaseStep,
@@ -146,14 +146,14 @@ func (l *TokenLimiter) Release() bool {
 	default:
 		// 理论上不会执行到这里。
 		// 执行到这里通常意味着 Release 的调用次数超过 Acquire 的调用次数。
-		slog.Warn("[synp-limiter] failed to release token, bucket is full")
+		slog.Warn("[token-limiter] failed to release token, bucket is full")
 		return false
 	}
 }
 
 func (l *TokenLimiter) Close() error {
 	l.cancelFunc()
-	slog.Info("[synp-limiter] token limiter closed")
+	slog.Info("[token-limiter] token limiter closed")
 	return nil
 }
 

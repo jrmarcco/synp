@@ -42,7 +42,7 @@ func (t *Task) run() {
 	// 检查重传次数。
 	if t.retransmitCnt.Load() >= t.manager.maxRetryCnt {
 		slog.Warn(
-			"[synp-retransmit-manager] retransmit task reach max retry cnt",
+			"[retransmit-manager] retransmit task reach max retry cnt",
 			"conn_id", t.conn.ID(),
 			"message_id", t.msg.MessageId,
 			"retransmit_count", t.retransmitCnt.Load(),
@@ -55,7 +55,7 @@ func (t *Task) run() {
 	err := t.manager.taskFunc(t.conn, t.msg)
 	if err != nil {
 		slog.Error(
-			"[synp-retransmit-manager] failed to retransmit message",
+			"[retransmit-manager] failed to retransmit message",
 			"conn_id", t.conn.ID(),
 			"message_id", t.msg.MessageId,
 			"retransmit_count", t.retransmitCnt.Load(),
@@ -69,7 +69,7 @@ func (t *Task) run() {
 
 	t.conn.UpdateActivityTime()
 	slog.Debug(
-		"[synp-retransmit-manager] successfully retransmit message",
+		"[retransmit-manager] successfully retransmit message",
 		"conn_id", t.conn.ID(),
 		"message_id", t.msg.MessageId,
 		"retransmit_count", t.retransmitCnt.Load(),
@@ -132,7 +132,7 @@ func (m *Manager) start(conn synp.Conn, msg *messagev1.Message) {
 	m.totalTaskCnt.Add(1)
 
 	slog.Debug(
-		"[synp-retransmit-manager] successfully start retransmit task",
+		"[retransmit-manager] successfully start retransmit task",
 		"conn_id", conn.ID(),
 		"message_id", msg.MessageId,
 		"retry_interval", m.retryInterval,
@@ -147,7 +147,7 @@ func (m *Manager) Stop(connID, messageID string) {
 		_ = m.stopAndDelete(key)
 
 		slog.Debug(
-			"[synp-retransmit-manager] successfully stop retransmit task",
+			"[retransmit-manager] successfully stop retransmit task",
 			"conn_id", connID,
 			"message_id", messageID,
 			"retransmit_count", task.retransmitCnt.Load(),
@@ -177,7 +177,7 @@ func (m *Manager) ClearByConn(connID string) {
 
 	if cnt > 0 {
 		slog.Info(
-			"[synp-retransmit-manager] successfully clear retransmit tasks by connection",
+			"[retransmit-manager] successfully clear retransmit tasks by connection",
 			"conn_id", connID,
 			"task_cleared_cnt", cnt,
 		)
@@ -208,7 +208,7 @@ func (m *Manager) Close() {
 	})
 
 	slog.Info(
-		"[synp-retransmit-manager] retransmit manager closed",
+		"[retransmit-manager] retransmit manager closed",
 		"task_cleared_cnt", cnt,
 	)
 }

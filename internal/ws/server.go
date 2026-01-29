@@ -99,12 +99,12 @@ func (s *Server) Start() error {
 		case gateway.EventPushMessage:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[synp-server] consumer not found", zap.String("event", key))
+				s.logger.Warn("[server] consumer not found", zap.String("event", key))
 				continue
 			}
 			if err := consumer.Start(s.ctx, s.consumePushMessage); err != nil {
 				s.logger.Error(
-					"[synp-server] failed to start push message consumer",
+					"[server] failed to start push message consumer",
 					zap.Error(err),
 				)
 				return err
@@ -112,12 +112,12 @@ func (s *Server) Start() error {
 		case gateway.EventScaleUp:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[synp-server] consumer not found", zap.String("event", key))
+				s.logger.Warn("[server] consumer not found", zap.String("event", key))
 				continue
 			}
 			if err := consumer.Start(s.ctx, s.consumeScaleUp); err != nil {
 				s.logger.Error(
-					"[synp-server] failed to start scale up consumer",
+					"[server] failed to start scale up consumer",
 					zap.Error(err),
 				)
 				return err
@@ -133,7 +133,7 @@ func (s *Server) acceptConn() {
 	for {
 		// 判断是否接收新连接。
 		if !s.acceptNewConn.Load() {
-			s.logger.Info("[synp-server] server is not accepting new connections")
+			s.logger.Info("[server] server is not accepting new connections")
 			return
 		}
 
@@ -142,7 +142,7 @@ func (s *Server) acceptConn() {
 			next := s.backoff.NextBackOff()
 
 			s.logger.Warn(
-				"[synp-server] connection limit reached, reject new connection",
+				"[server] connection limit reached, reject new connection",
 				zap.Duration("next_backoff", next),
 			)
 			time.Sleep(next)
@@ -158,7 +158,7 @@ func (s *Server) acceptConn() {
 			s.connLimiter.Release()
 
 			s.logger.Error(
-				"[synp-server] failed to accept connection",
+				"[server] failed to accept connection",
 				zap.Error(err),
 			)
 			if errors.Is(err, net.ErrClosed) {
@@ -194,7 +194,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
 			s.logger.Warn(
-				"[synp-server] failed to close connection",
+				"[server] failed to close connection",
 				zap.Error(err),
 			)
 		}
@@ -204,7 +204,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	sess, compressionState, err := s.upgrader.Upgrade(conn)
 	if err != nil {
 		s.logger.Error(
-			"[synp-server] failed to upgrade connection from HTTP to WebSocket",
+			"[server] failed to upgrade connection from HTTP to WebSocket",
 			zap.Error(err),
 		)
 		return
@@ -215,7 +215,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
 		s.logger.Error(
-			"[synp-server] failed to create synp connection",
+			"[server] failed to create synp connection",
 			zap.Error(err),
 		)
 		return
@@ -226,7 +226,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		s.connManager.RemoveConn(user)
 		if err := synpConn.Close(); err != nil {
 			s.logger.Error(
-				"[synp-server] failed to close synp connection",
+				"[server] failed to close synp connection",
 				zap.String("conn_id", synpConn.ID()),
 				zap.Error(err),
 			)
@@ -236,7 +236,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	// 处理 on connect & on disconnect 事件。
 	if err := s.connHandler.OnConnect(synpConn); err != nil {
 		s.logger.Error(
-			"[synp-server] failed to handle on connect lifecycle event",
+			"[server] failed to handle on connect lifecycle event",
 			zap.String("conn_id", synpConn.ID()),
 			zap.Error(err),
 		)
@@ -248,7 +248,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer func() {
 		if err := s.connHandler.OnDisconnect(synpConn); err != nil {
 			s.logger.Error(
-				"[synp-server] failed to handle on disconnect lifecycle event",
+				"[server] failed to handle on disconnect lifecycle event",
 				zap.String("conn_id", synpConn.ID()),
 				zap.Error(err),
 			)
@@ -265,7 +265,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			if err := s.connHandler.OnReceiveFromFrontend(synpConn, message); err != nil {
 				// 处理前端（业务客户端）发送的消息失败。
 				s.logger.Error(
-					"[synp-server] failed to handle on receive from frontend event",
+					"[server] failed to handle on receive from frontend event",
 					zap.Error(err),
 				)
 
@@ -275,10 +275,10 @@ func (s *Server) handleConn(conn net.Conn) {
 				}
 			}
 		case <-synpConn.Closed():
-			s.logger.Info("[synp-server] synp connection has been closed")
+			s.logger.Info("[server] synp connection has been closed")
 			return
 		case <-s.ctx.Done():
-			s.logger.Info("[synp-server] server has been closed")
+			s.logger.Info("[server] server has been closed")
 			return
 		}
 	}
@@ -291,7 +291,7 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 	// 所以直接使用 json 进行解码即可。
 	if err := json.Unmarshal(msg.Val, pushMsg); err != nil {
 		s.logger.Error(
-			"[synp-server] failed to unmarshal push message",
+			"[server] failed to unmarshal push message",
 			zap.String("message", string(msg.Val)),
 			zap.Error(err),
 		)
@@ -301,7 +301,7 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 	conns, err := s.findConn(pushMsg)
 	if err != nil {
 		s.logger.Error(
-			"[synp-server] failed to find connection for user",
+			"[server] failed to find connection for user",
 			zap.String("message", string(msg.Val)),
 			zap.Error(err),
 		)
@@ -310,7 +310,7 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 
 	if err = s.connHandler.OnReceiveFromBackend(conns, pushMsg); err != nil {
 		s.logger.Error(
-			"[synp-server] failed to handle on receive from backend event",
+			"[server] failed to handle on receive from backend event",
 			zap.String("message", string(msg.Val)),
 			zap.Error(err),
 		)
@@ -339,7 +339,7 @@ func (s *Server) consumeScaleUp(_ context.Context, _ *xmq.Message) error {
 func (s *Server) Shutdown() error {
 	// 关闭限流器。
 	if err := s.connLimiter.Close(); err != nil {
-		s.logger.Error("[synp-server] failed to close connection limiter", zap.Error(err))
+		s.logger.Error("[server] failed to close connection limiter", zap.Error(err))
 		return err
 	}
 
@@ -352,7 +352,7 @@ func (s *Server) GracefulShutdown() error {
 
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
-			s.logger.Warn("[synp-server] failed to close net listener", zap.Error(err))
+			s.logger.Warn("[server] failed to close net listener", zap.Error(err))
 		}
 	}
 

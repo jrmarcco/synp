@@ -109,7 +109,7 @@ func (c *KafkaConsumer) readMessage() {
 			if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				return
 			}
-			slog.Warn("[synp-xmq-consumer] failed to read message from kafka", "err", err.Error())
+			slog.Warn("[xmq-consumer] failed to read message from kafka", "err", err.Error())
 			continue
 		}
 

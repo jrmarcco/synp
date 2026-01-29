@@ -18,7 +18,7 @@ type HeartbeatMsgHandler struct {
 
 func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	slog.Debug(
-		"[synp-heartbeat-msg-handler] received heartbeat message",
+		"[heartbeat-msg-handler] received heartbeat message",
 		"conn_id", conn.ID(),
 		"message", msg.String(),
 	)

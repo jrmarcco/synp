@@ -20,7 +20,7 @@ func (h *DownstreamAckHandler) Handle(conn synp.Conn, msg *messagev1.Message) er
 	h.retransmitManager.Stop(conn.ID(), msg.MessageId)
 
 	slog.Debug(
-		"[synp-downstream-ack-handler] received downstream ack message",
+		"[downstream-ack-handler] received downstream ack message",
 		"conn_id", conn.ID(),
 		"message_id", msg.MessageId,
 	)

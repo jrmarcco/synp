@@ -56,7 +56,7 @@ func (c *Consumer) Start(ctx context.Context, consumeFunc ConsumeFunc) error {
 		consumer, err := c.consumerFactory.NewConsumer(c.topic, c.groupID)
 		if err != nil {
 			c.logger.Error(
-				"[synp-gateway-consumer] failed to create consumer",
+				"[gateway-consumer] failed to create consumer",
 				zap.String("topic", c.topic),
 				zap.String("group_id", c.groupID),
 				zap.Int32("partition", partition),
@@ -68,7 +68,7 @@ func (c *Consumer) Start(ctx context.Context, consumeFunc ConsumeFunc) error {
 		msgChan, err := consumer.ConsumeChan(ctx)
 		if err != nil {
 			c.logger.Error(
-				"[synp-gateway-consumer] failed to get message channel",
+				"[gateway-consumer] failed to get message channel",
 				zap.String("topic", c.topic),
 				zap.String("group_id", c.groupID),
 				zap.Int32("partition", partition),
@@ -86,10 +86,10 @@ func (c *Consumer) consume(ctx context.Context, msgChan <-chan *xmq.Message, con
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.logger.Info("[synp-gateway-consumer] consumer context done")
+			c.logger.Info("[gateway-consumer] consumer context done")
 			return
 		case <-ctx.Done():
-			c.logger.Info("[synp-gateway-consumer] method param context done")
+			c.logger.Info("[gateway-consumer] method param context done")
 			return
 		case msg, ok := <-msgChan:
 			if !ok {
@@ -98,7 +98,7 @@ func (c *Consumer) consume(ctx context.Context, msgChan <-chan *xmq.Message, con
 
 			if err := consumeFunc(ctx, msg); err != nil {
 				c.logger.Error(
-					"[synp-gateway-consumer] failed to consume message",
+					"[gateway-consumer] failed to consume message",
 					zap.String("topic", msg.Topic),
 					zap.Int64("offset", msg.Offset),
 					zap.Int("partition", msg.Partition),
