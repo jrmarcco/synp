@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocess"
@@ -10,9 +11,10 @@ import (
 )
 
 type Consumer struct {
-	topic      string
-	groupID    string
-	partitions int32
+	topic          string
+	groupID        string
+	partitions     int32
+	consumeTimeout time.Duration
 
 	factory   xconsume.ConsumerFactory
 	processor *xprocess.ConsumeProcessor
@@ -23,6 +25,7 @@ type Consumer struct {
 func NewConsumer(
 	topic, groupID string,
 	partitions int32,
+	consumeTimeout time.Duration,
 	factory xconsume.ConsumerFactory,
 	logger *zap.Logger,
 ) (*Consumer, error) {
@@ -33,9 +36,10 @@ func NewConsumer(
 	return &Consumer{
 		factory: factory,
 
-		topic:      topic,
-		groupID:    groupID,
-		partitions: partitions,
+		topic:          topic,
+		groupID:        groupID,
+		partitions:     partitions,
+		consumeTimeout: consumeTimeout,
 
 		logger: logger,
 	}, nil
@@ -57,12 +61,12 @@ func (c *Consumer) StartConsumer(ctx context.Context, handler xprocess.MsgHandle
 
 	c.processor = xprocess.NewConsumeProcessor(
 		xprocess.ConsumeProcessorConfig{
-			Topics:  topics,
-			Handler: handler,
+			Topics:        topics,
+			Handler:       handler,
+			HandleTimeout: c.consumeTimeout,
 		},
 		c.factory,
 	)
-
 	return c.processor.Start(ctx)
 }
 

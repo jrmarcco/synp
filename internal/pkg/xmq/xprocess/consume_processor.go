@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
@@ -17,10 +18,9 @@ type TopicConfig struct {
 
 // ConsumeProcessorConfig 是消费处理器的配置。
 type ConsumeProcessorConfig struct {
-	// Topics 是要消费的主题配置列表。
-	Topics []TopicConfig
-	// Handler 是消息处理函数。
-	Handler MsgHandler
+	Topics        []TopicConfig // 消费的主题配置列表
+	Handler       MsgHandler    // 消息处理函数
+	HandleTimeout time.Duration // 消息处理的超时时间
 }
 
 // ConsumeProcessor 是通用的消费处理器。
@@ -46,10 +46,13 @@ func NewConsumeProcessor(cfg ConsumeProcessorConfig, factory xconsume.ConsumerFa
 }
 
 // Start 启动处理器，为每个主题创建消费者并开始消费。
-// ctx 用于控制启动过程的超时和取消。
+// ctx 仅用于控制启动过程的超时和取消。
 func (p *ConsumeProcessor) Start(ctx context.Context) error {
 	if p.cfg.Handler == nil {
 		return fmt.Errorf("message handler is required")
+	}
+	if p.cfg.HandleTimeout <= 0 {
+		return fmt.Errorf("handle timeout is required")
 	}
 
 	for _, topicCfg := range p.cfg.Topics {
@@ -72,8 +75,9 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 		}
 		// 注意:
 		// 	这里使用 p.ctx ( 内部 context ) 而不是传入的 ctx。
+		//  方法参数 ctx 仅用于控制 Start 方法操作本身的超时和取消。
 		//  p.ctx 用于控制消费 goroutine 的生命周期 ( 直到调用 Stop 方法 )。
-		//  传入的 ctx 仅用于控制 Start 方法操作本身的超时。
+		//
 		//nolint:contextcheck // 这里需要使用长生命周期的 p.ctx
 		msgChan, err := consumer.ConsumeChan(p.ctx)
 		if err != nil {
@@ -85,8 +89,9 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 			)
 			return err
 		}
-
 		// 为每个主题启动一个 goroutine 来消费消息。
+		//
+		//nolint:contextcheck // consume 内部使用长生命周期的 p.ctx 无需传递 Start 方法的 ctx 参数
 		go p.consume(msgChan)
 	}
 
@@ -105,7 +110,12 @@ func (p *ConsumeProcessor) consume(msgChan <-chan *xmq.Message) {
 				slog.Info("[xmq-consumer-processor] message channel closed")
 				return
 			}
-			if err := p.cfg.Handler(p.ctx, msg); err != nil {
+
+			handlerCtx, handlerCancel := context.WithTimeout(context.Background(), p.cfg.HandleTimeout)
+			err := p.cfg.Handler(handlerCtx, msg)
+			handlerCancel()
+
+			if err != nil {
 				slog.Error(
 					"[xmq-consumer-processor] failed to process message",
 					"topic", msg.Topic,
