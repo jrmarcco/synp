@@ -42,6 +42,31 @@ type Handler struct {
 	logger *zap.Logger
 }
 
+func NewHandler(
+	rdb redis.Cmdable,
+	cacheRequestTimeout time.Duration,
+	cacheExpiration time.Duration,
+	codec codec.Codec,
+	uMsgHandlers []upstream.UMsgHandler,
+	dMsgHandler downstream.DMsgHandler,
+	logger *zap.Logger,
+) *Handler {
+	m := make(map[commonv1.CommandType]upstream.UMsgHandler)
+	for _, handler := range uMsgHandlers {
+		m[handler.CmdType()] = handler
+	}
+
+	return &Handler{
+		rdb:                 rdb,
+		cacheRequestTimeout: cacheRequestTimeout,
+		cacheExpiration:     cacheExpiration,
+		codec:               codec,
+		uMsgHandlers:        m,
+		dMsgHandler:         dMsgHandler,
+		logger:              logger,
+	}
+}
+
 func (h *Handler) OnConnect(conn synp.Conn) error {
 	h.logger.Debug(
 		"[conn-lifecycle-handler] connection connected",
@@ -71,7 +96,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		return err
 	}
 
-	// 消息去重（幂等）。
+	// 消息去重 ( 幂等 )。
 	user := conn.Session().User()
 	ok, err := h.cacheMessage(user.BID, msg)
 	if err != nil {
@@ -193,29 +218,4 @@ func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.PushMes
 	}
 
 	return h.dMsgHandler.Handle(conns, msg)
-}
-
-func NewHandler(
-	rdb redis.Cmdable,
-	cacheRequestTimeout time.Duration,
-	cacheExpiration time.Duration,
-	codec codec.Codec,
-	uMsgHandlers []upstream.UMsgHandler,
-	dMsgHandler downstream.DMsgHandler,
-	logger *zap.Logger,
-) *Handler {
-	m := make(map[commonv1.CommandType]upstream.UMsgHandler)
-	for _, handler := range uMsgHandlers {
-		m[handler.CmdType()] = handler
-	}
-
-	return &Handler{
-		rdb:                 rdb,
-		cacheRequestTimeout: cacheRequestTimeout,
-		cacheExpiration:     cacheExpiration,
-		codec:               codec,
-		uMsgHandlers:        m,
-		dMsgHandler:         dMsgHandler,
-		logger:              logger,
-	}
 }

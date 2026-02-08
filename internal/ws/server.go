@@ -298,7 +298,7 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 		return err
 	}
 
-	conns, err := s.findConn(pushMsg)
+	conns, err := s.findConns(pushMsg)
 	if err != nil {
 		s.logger.Error(
 			"[server] failed to find connection for user",
@@ -319,13 +319,15 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 	return nil
 }
 
-func (s *Server) findConn(pushMsg *messagev1.PushMessage) ([]synp.Conn, error) {
+// findConns 根据下行消息查找对应的连接。
+// msg 是网关接收到的下行消息 ( 由业务服务端推送至网关 )。
+func (s *Server) findConns(msg *messagev1.PushMessage) ([]synp.Conn, error) {
 	conns, ok := s.connManager.FindUserConn(session.User{
-		BID: pushMsg.GetBizId(),
-		UID: pushMsg.GetReceiverId(),
+		BID: msg.GetBizId(),
+		UID: msg.GetReceiverId(),
 	})
 	if !ok {
-		return nil, fmt.Errorf("%w: user_id=%d, biz_id=%d", ErrUnknownReceiver, pushMsg.GetReceiverId(), pushMsg.GetBizId())
+		return nil, fmt.Errorf("%w: user_id=%d, biz_id=%d", ErrUnknownReceiver, msg.GetReceiverId(), msg.GetBizId())
 	}
 	return conns, nil
 }

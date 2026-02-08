@@ -15,6 +15,12 @@ type DownstreamAckHandler struct {
 	retransmitManager *retransmit.Manager
 }
 
+func NewDownstreamAckHandler(retransmitManager *retransmit.Manager) *DownstreamAckHandler {
+	return &DownstreamAckHandler{
+		retransmitManager: retransmitManager,
+	}
+}
+
 func (h *DownstreamAckHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	// 停止向前端推送 downstream 消息的重试。
 	h.retransmitManager.Stop(conn.ID(), msg.MessageId)
@@ -29,10 +35,4 @@ func (h *DownstreamAckHandler) Handle(conn synp.Conn, msg *messagev1.Message) er
 
 func (h *DownstreamAckHandler) CmdType() commonv1.CommandType {
 	return commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM_ACK
-}
-
-func NewDownstreamAckHandler(retransmitManager *retransmit.Manager) *DownstreamAckHandler {
-	return &DownstreamAckHandler{
-		retransmitManager: retransmitManager,
-	}
 }

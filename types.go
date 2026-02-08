@@ -64,12 +64,18 @@ type Handler interface {
 	OnReceiveFromBackend(conns []Conn, pushMsg *messagev1.PushMessage) error
 }
 
+var _ Handler = (*HandlerWrapper)(nil)
+
 // HandlerWrapper 是 Handler 的包装器，用于组合多个 Handler。
 type HandlerWrapper struct {
 	handlers []Handler
 }
 
-var _ Handler = (*HandlerWrapper)(nil)
+func NewHandlerWrapper(handlers ...Handler) *HandlerWrapper {
+	return &HandlerWrapper{
+		handlers: handlers,
+	}
+}
 
 func (w *HandlerWrapper) OnConnect(conn Conn) error {
 	var err error
@@ -106,10 +112,4 @@ func (w *HandlerWrapper) OnReceiveFromBackend(conns []Conn, pushMsg *messagev1.P
 		err = multierr.Append(err, handler.OnReceiveFromBackend(conns, pushMsg))
 	}
 	return err
-}
-
-func NewHandlerWrapper(handlers ...Handler) *HandlerWrapper {
-	return &HandlerWrapper{
-		handlers: handlers,
-	}
 }

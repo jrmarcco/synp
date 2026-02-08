@@ -16,6 +16,12 @@ type HeartbeatMsgHandler struct {
 	pushFunc message.PushFunc
 }
 
+func NewHeartbeatMsgHandler(pushFunc message.PushFunc) *HeartbeatMsgHandler {
+	return &HeartbeatMsgHandler{
+		pushFunc: pushFunc,
+	}
+}
+
 func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	slog.Debug(
 		"[heartbeat-msg-handler] received heartbeat message",
@@ -29,10 +35,4 @@ func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) err
 
 func (h *HeartbeatMsgHandler) CmdType() commonv1.CommandType {
 	return commonv1.CommandType_COMMAND_TYPE_HEARTBEAT
-}
-
-func NewHeartbeatMsgHandler(pushFunc message.PushFunc) *HeartbeatMsgHandler {
-	return &HeartbeatMsgHandler{
-		pushFunc: pushFunc,
-	}
 }

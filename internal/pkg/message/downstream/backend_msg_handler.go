@@ -16,6 +16,16 @@ type BackendMsgHandler struct {
 	retransmitManager *retransmit.Manager
 }
 
+func NewBackendMsgHandler(
+	pushFunc message.PushFunc,
+	retransmitManager *retransmit.Manager,
+) *BackendMsgHandler {
+	return &BackendMsgHandler{
+		pushFunc:          pushFunc,
+		retransmitManager: retransmitManager,
+	}
+}
+
 func (h *BackendMsgHandler) Handle(conns []synp.Conn, pushMsg *messagev1.PushMessage) error {
 	downstreamMsg := &messagev1.Message{
 		Cmd:       commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
@@ -36,14 +46,4 @@ func (h *BackendMsgHandler) Handle(conns []synp.Conn, pushMsg *messagev1.PushMes
 		conn.UpdateActivityTime()
 	}
 	return nil
-}
-
-func NewBackendMsgHandler(
-	pushFunc message.PushFunc,
-	retransmitManager *retransmit.Manager,
-) *BackendMsgHandler {
-	return &BackendMsgHandler{
-		pushFunc:          pushFunc,
-		retransmitManager: retransmitManager,
-	}
 }

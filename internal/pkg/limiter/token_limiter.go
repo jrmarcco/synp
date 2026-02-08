@@ -15,31 +15,6 @@ type TokenLimiterConfig struct {
 	IncreaseInterval time.Duration
 }
 
-func DefaultConfig() TokenLimiterConfig {
-	// 默认配置。
-	//
-	// 从初始容量扩容到最大容量需要：
-	//  |-- 增量：50000 - 2000 = 48000
-	//  |--次数：48000 ÷ 500 = 96次
-	//  |--时间：96 × 2秒 = 192秒（约3.2分钟）
-	//
-	// 推荐设置：
-	//  |-- 小规模场景：InitCapacity: 500, MaxCapacity: 10000
-	//  |-- 大规模场景：InitCapacity: 5000, MaxCapacity: 100000
-	const (
-		defaultInitCapacity     = int64(2000)
-		defaultMaxCapacity      = int64(50000)
-		defaultIncreaseStep     = int64(500)
-		defaultIncreaseInterval = 2 * time.Second
-	)
-	return TokenLimiterConfig{
-		InitCapacity:     defaultInitCapacity,
-		MaxCapacity:      defaultMaxCapacity,
-		IncreaseStep:     defaultIncreaseStep,
-		IncreaseInterval: defaultIncreaseInterval,
-	}
-}
-
 func NewConfig(initCapacity, maxCapacity, increaseStep int64, increaseInterval time.Duration) (TokenLimiterConfig, error) {
 	var cfg TokenLimiterConfig
 
@@ -73,6 +48,31 @@ func NewConfig(initCapacity, maxCapacity, increaseStep int64, increaseInterval t
 	return cfg, nil
 }
 
+func DefaultConfig() TokenLimiterConfig {
+	// 默认配置。
+	//
+	// 从初始容量扩容到最大容量需要:
+	//  |-- 增量: 50000 - 2000 = 48000
+	//  |-- 次数: 48000 ÷ 500 = 96 次
+	//  |-- 时间: 96 × 2s  = 192s ( 约 3.2 分钟 )
+	//
+	// 推荐设置:
+	//  |-- 小规模场景: InitCapacity = 500  / MaxCapacity = 10000
+	//  |-- 大规模场景: InitCapacity = 5000 / MaxCapacity = 100000
+	const (
+		defaultInitCapacity     = int64(2000)
+		defaultMaxCapacity      = int64(50000)
+		defaultIncreaseStep     = int64(500)
+		defaultIncreaseInterval = 2 * time.Second
+	)
+	return TokenLimiterConfig{
+		InitCapacity:     defaultInitCapacity,
+		MaxCapacity:      defaultMaxCapacity,
+		IncreaseStep:     defaultIncreaseStep,
+		IncreaseInterval: defaultIncreaseInterval,
+	}
+}
+
 // TokenLimiter 令牌桶算法限流器。
 type TokenLimiter struct {
 	cfg TokenLimiterConfig
@@ -82,6 +82,32 @@ type TokenLimiter struct {
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+}
+
+func NewTokenLimiter(cfg TokenLimiterConfig) *TokenLimiter {
+	ctx, cancel := context.WithCancel(context.Background())
+	tl := &TokenLimiter{
+		cfg: cfg,
+
+		tokens: make(chan struct{}, cfg.InitCapacity),
+
+		ctx:        ctx,
+		cancelFunc: cancel,
+	}
+
+	// 初始令牌。
+	for i := int64(0); i < cfg.InitCapacity; i++ {
+		tl.tokens <- struct{}{}
+	}
+	tl.currCapacity.Store(cfg.InitCapacity)
+
+	slog.Info(
+		"[token-limiter] successfully initialized",
+		"init_capacity", cfg.InitCapacity,
+		"max_capacity", cfg.MaxCapacity,
+	)
+
+	return tl
 }
 
 // Start 开启一个 goroutine，逐步增加桶的容量。
@@ -159,30 +185,4 @@ func (l *TokenLimiter) Close() error {
 
 func (l *TokenLimiter) Cap() int64 {
 	return l.currCapacity.Load()
-}
-
-func NewTokenLimiter(cfg TokenLimiterConfig) *TokenLimiter {
-	ctx, cancel := context.WithCancel(context.Background())
-	tl := &TokenLimiter{
-		cfg: cfg,
-
-		tokens: make(chan struct{}, cfg.InitCapacity),
-
-		ctx:        ctx,
-		cancelFunc: cancel,
-	}
-
-	// 初始令牌。
-	for i := int64(0); i < cfg.InitCapacity; i++ {
-		tl.tokens <- struct{}{}
-	}
-	tl.currCapacity.Store(cfg.InitCapacity)
-
-	slog.Info(
-		"[token-limiter] successfully initialized",
-		"init_capacity", cfg.InitCapacity,
-		"max_capacity", cfg.MaxCapacity,
-	)
-
-	return tl
 }

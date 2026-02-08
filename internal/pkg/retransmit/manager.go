@@ -23,12 +23,35 @@ const (
 type Task struct {
 	key  string
 	conn synp.Conn
-	msg  *messagev1.Message
+
+	msg *messagev1.Message
 
 	timerPtr      atomic.Pointer[time.Timer] // 重传定时器
 	retransmitCnt atomic.Int32               // 重传次数
 
 	manager *Manager
+}
+
+func NewManager(retryInterval time.Duration, maxRetryCnt int32, taskFunc message.PushFunc) *Manager {
+	if retryInterval <= 0 {
+		retryInterval = DefaultRetryInterval
+	}
+	if maxRetryCnt <= 0 {
+		maxRetryCnt = DefaultMaxRetryCnt
+	}
+
+	if taskFunc == nil {
+		taskFunc = func(_ synp.Conn, _ *messagev1.Message) error {
+			return nil
+		}
+	}
+
+	return &Manager{
+		tasks:         &xsync.Map[string, *Task]{},
+		retryInterval: retryInterval,
+		maxRetryCnt:   maxRetryCnt,
+		taskFunc:      taskFunc,
+	}
 }
 
 func (t *Task) run() {
@@ -211,26 +234,4 @@ func (m *Manager) Close() {
 		"[retransmit-manager] retransmit manager closed",
 		"task_cleared_cnt", cnt,
 	)
-}
-
-func NewManager(retryInterval time.Duration, maxRetryCnt int32, taskFunc message.PushFunc) *Manager {
-	if retryInterval <= 0 {
-		retryInterval = DefaultRetryInterval
-	}
-	if maxRetryCnt <= 0 {
-		maxRetryCnt = DefaultMaxRetryCnt
-	}
-
-	if taskFunc == nil {
-		taskFunc = func(_ synp.Conn, _ *messagev1.Message) error {
-			return nil
-		}
-	}
-
-	return &Manager{
-		tasks:         &xsync.Map[string, *Task]{},
-		retryInterval: retryInterval,
-		maxRetryCnt:   maxRetryCnt,
-		taskFunc:      taskFunc,
-	}
 }

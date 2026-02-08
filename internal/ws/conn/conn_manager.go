@@ -122,6 +122,30 @@ type ConnManager struct {
 	logger *zap.Logger
 }
 
+func NewConnManager(logger *zap.Logger, opts ...option.Opt[ConnManager]) *ConnManager {
+	cfg := &ConnConfig{
+		ReadTimeout:       DefaultReadTiemout,
+		WriteTimeout:      DefaultWriteTiemout,
+		InitRetryInterval: DefaultInitRetryInterval,
+		MaxRetryInterval:  DefaultMaxRetryInterval,
+		MaxRetryCount:     DefaultMaxRetryCount,
+		SendBufferSize:    DefaultSendBufferSize,
+		ReceiveBufferSize: DefaultReceiveBufferSize,
+		CloseTimeout:      DefaultCloseTimeout,
+		RateLimit:         DefaultRateLimit,
+	}
+
+	cm := &ConnManager{
+		cfg:    cfg,
+		conns:  &xsync.Map[string, *DeviceConns]{},
+		logger: logger,
+	}
+
+	option.Apply(cm, opts...)
+
+	return cm
+}
+
 func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess session.Session, compressionState *compression.State) (synp.Conn, error) {
 	user := sess.User()
 	connKey := user.ConnKey()
@@ -140,12 +164,12 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 		_ = m.RemoveConn(user)
 	}
 
-	// 创建新连接
+	// 创建新连接。
 	connID := user.ConnID()
 	opts := m.convertToConnOpts(user, compressionState)
 	newConn := NewConn(ctx, connID, sess, netConn, m.logger, opts...)
 
-	// 存储连接
+	// 存储连接。
 	m.storeConn(connKey, device, newConn)
 	m.logger.Info(
 		"[conn-manager] successfully create connection",
@@ -286,28 +310,4 @@ func ConnManagerWithConfig(cfg *ConnConfig) option.Opt[ConnManager] {
 	return func(m *ConnManager) {
 		m.cfg = cfg
 	}
-}
-
-func NewConnManager(logger *zap.Logger, opts ...option.Opt[ConnManager]) *ConnManager {
-	cfg := &ConnConfig{
-		ReadTimeout:       DefaultReadTiemout,
-		WriteTimeout:      DefaultWriteTiemout,
-		InitRetryInterval: DefaultInitRetryInterval,
-		MaxRetryInterval:  DefaultMaxRetryInterval,
-		MaxRetryCount:     DefaultMaxRetryCount,
-		SendBufferSize:    DefaultSendBufferSize,
-		ReceiveBufferSize: DefaultReceiveBufferSize,
-		CloseTimeout:      DefaultCloseTimeout,
-		RateLimit:         DefaultRateLimit,
-	}
-
-	cm := &ConnManager{
-		cfg:    cfg,
-		conns:  &xsync.Map[string, *DeviceConns]{},
-		logger: logger,
-	}
-
-	option.Apply(cm, opts...)
-
-	return cm
 }

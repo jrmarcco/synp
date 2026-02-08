@@ -20,12 +20,29 @@ var _ UMsgHandler = (*FrontendMsgHandler)(nil)
 
 // FrontendMsgHandler 是前端消息处理器的实现，用于处理前端 ( 业务客户端 ) 发送的消息。
 type FrontendMsgHandler struct {
-	mqTopic          string        // 消息队列 topic
+	topic            string        // 消息队列 topic
 	onReceiveTimeout time.Duration // 接收消息超时时间
 
 	codec    codec.Codec
 	producer xproduce.Producer
 	pushFunc message.PushFunc
+}
+
+func NewFrontendMsgHandler(
+	mqTopic string,
+	onReceiveTimeout time.Duration,
+	codec codec.Codec,
+	producer xproduce.Producer,
+	pushFunc message.PushFunc,
+) *FrontendMsgHandler {
+	return &FrontendMsgHandler{
+		topic:            mqTopic,
+		onReceiveTimeout: onReceiveTimeout,
+
+		codec:    codec,
+		producer: producer,
+		pushFunc: pushFunc,
+	}
 }
 
 func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
@@ -76,7 +93,7 @@ func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
 	}
 
 	mqMsg := &xmq.Message{
-		Topic: h.mqTopic,
+		Topic: h.topic,
 		Key:   []byte(msg.GetMessageId()),
 		Val:   val,
 	}
@@ -97,21 +114,4 @@ func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
 
 func (h *FrontendMsgHandler) CmdType() commonv1.CommandType {
 	return commonv1.CommandType_COMMAND_TYPE_UPSTREAM
-}
-
-func NewFrontendMsgHandler(
-	mqTopic string,
-	onReceiveTimeout time.Duration,
-	codec codec.Codec,
-	producer xproduce.Producer,
-	pushFunc message.PushFunc,
-) *FrontendMsgHandler {
-	return &FrontendMsgHandler{
-		mqTopic:          mqTopic,
-		onReceiveTimeout: onReceiveTimeout,
-
-		codec:    codec,
-		producer: producer,
-		pushFunc: pushFunc,
-	}
 }
