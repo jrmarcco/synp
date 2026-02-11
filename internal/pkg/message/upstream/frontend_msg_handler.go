@@ -9,7 +9,6 @@ import (
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
-	"github.com/jrmarcco/synp/internal/pkg/codec"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
@@ -23,23 +22,20 @@ type FrontendMsgHandler struct {
 	topic            string        // 消息队列 topic
 	onReceiveTimeout time.Duration // 接收消息超时时间
 
-	codec    codec.Codec
 	producer xproduce.Producer
 	pushFunc message.PushFunc
 }
 
 func NewFrontendMsgHandler(
-	mqTopic string,
+	topic string,
 	onReceiveTimeout time.Duration,
-	codec codec.Codec,
 	producer xproduce.Producer,
 	pushFunc message.PushFunc,
 ) *FrontendMsgHandler {
 	return &FrontendMsgHandler{
-		topic:            mqTopic,
+		topic:            topic,
 		onReceiveTimeout: onReceiveTimeout,
 
-		codec:    codec,
 		producer: producer,
 		pushFunc: pushFunc,
 	}

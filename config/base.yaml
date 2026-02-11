@@ -46,7 +46,7 @@ synp:
         topic: event.message.downstream
         group_id: synp-downstream-message-consumer
         partitions: 6
-        handle_timeout: 10s
+        handle_timeout: 16s
 
 jwt:
   issuer: hermet-access

@@ -36,8 +36,8 @@ type Handler struct {
 
 	codec codec.Codec
 
-	uMsgHandlers map[commonv1.CommandType]upstream.UMsgHandler
-	dMsgHandler  downstream.DMsgHandler
+	dMsgHandler    downstream.DMsgHandler
+	uMsgHandlerMap map[commonv1.CommandType]upstream.UMsgHandler
 
 	logger *zap.Logger
 }
@@ -47,23 +47,27 @@ func NewHandler(
 	cacheRequestTimeout time.Duration,
 	cacheExpiration time.Duration,
 	codec codec.Codec,
-	uMsgHandlers []upstream.UMsgHandler,
 	dMsgHandler downstream.DMsgHandler,
+	uMsgHandlers []upstream.UMsgHandler,
 	logger *zap.Logger,
 ) *Handler {
-	m := make(map[commonv1.CommandType]upstream.UMsgHandler)
+	uMsgHandlerMap := make(map[commonv1.CommandType]upstream.UMsgHandler)
 	for _, handler := range uMsgHandlers {
-		m[handler.CmdType()] = handler
+		uMsgHandlerMap[handler.CmdType()] = handler
 	}
 
 	return &Handler{
-		rdb:                 rdb,
+		rdb: rdb,
+
 		cacheRequestTimeout: cacheRequestTimeout,
 		cacheExpiration:     cacheExpiration,
-		codec:               codec,
-		uMsgHandlers:        m,
-		dMsgHandler:         dMsgHandler,
-		logger:              logger,
+
+		codec: codec,
+
+		dMsgHandler:    dMsgHandler,
+		uMsgHandlerMap: uMsgHandlerMap,
+
+		logger: logger,
 	}
 }
 
@@ -127,7 +131,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	)
 
 	// 处理消息。
-	uMsgHandler, ok := h.uMsgHandlers[msg.GetCmd()]
+	uMsgHandler, ok := h.uMsgHandlerMap[msg.GetCmd()]
 	if !ok {
 		h.logger.Error(
 			"[conn-lifecycle-handler] unknown message type from frontend",

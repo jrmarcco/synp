@@ -51,8 +51,8 @@ func newConnLcHandler(params connHandlerFxParams) (*Handler, error) {
 		cfg.CacheRequestTimeout,
 		cfg.CacheExpiration,
 		params.Codec,
-		params.UMsgHandlers,
 		params.DMsgHandler,
+		params.UMsgHandlers,
 		params.Logger,
 	), nil
 }
