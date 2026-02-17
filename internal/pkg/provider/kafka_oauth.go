@@ -91,7 +91,9 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 	if err != nil {
 		return "", fmt.Errorf("failed to send http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

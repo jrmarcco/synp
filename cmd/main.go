@@ -54,10 +54,10 @@ func main() {
 		ws.UpgraderFxModule,
 
 		// 初始化 conn lifecycle handler 。
-		lifecycle.ConnLcHandlerFxModule,
+		lifecycle.ConnLifecycleFxModule,
 
-		// 初始化 conn manager。
-		conn.ConnManagerFxModule,
+		// 初始化 conn。
+		conn.ConnFxModule,
 
 		// 初始化 app。
 		app.AppFxModule,
@@ -65,7 +65,7 @@ func main() {
 }
 
 func loadConfig() error {
-	viper.AddConfigPath("config")
+	viper.AddConfigPath("etc")
 	viper.SetConfigType("yaml")
 
 	// 读取基础配置。
@@ -74,6 +74,7 @@ func loadConfig() error {
 		return fmt.Errorf("failed to read base config: %w", err)
 	}
 
+	// 合并其他配置文件。
 	subConfigNames := []string{"redis", "kafka"}
 	for _, subConfigName := range subConfigNames {
 		viper.SetConfigName(subConfigName)

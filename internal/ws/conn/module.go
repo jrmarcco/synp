@@ -1,16 +1,24 @@
 package conn
 
 import (
+	"errors"
 	"time"
 
 	"github.com/jrmarcco/synp"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
-var ConnManagerFxModule = fx.Module(
-	"ws-conn-manager",
+var ConnFxModule = fx.Module(
+	"ws-conn",
+	fx.Provide(
+		fx.Annotate(
+			newConnRegistry,
+			fx.As(new(synp.ConnRegistry)),
+		),
+	),
 	fx.Provide(
 		fx.Annotate(
 			newConnManager,
@@ -18,6 +26,19 @@ var ConnManagerFxModule = fx.Module(
 		),
 	),
 )
+
+func newConnRegistry(rdb redis.Cmdable, logger *zap.Logger) (*ConnRegistry, error) {
+	var node string
+	if err := viper.UnmarshalKey("synp.node_id", &node); err != nil {
+		return nil, err
+	}
+
+	if node == "" {
+		return nil, errors.New("node_id is required in config")
+	}
+
+	return NewConnRegistry(rdb, node, logger), nil
+}
 
 func newConnManager(zapLogger *zap.Logger) (*ConnManager, error) {
 	type config = struct {

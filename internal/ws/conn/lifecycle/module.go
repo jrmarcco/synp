@@ -13,11 +13,11 @@ import (
 	"go.uber.org/zap"
 )
 
-var ConnLcHandlerFxModule = fx.Module(
-	"ws-conn-lifecycle-handler",
+var ConnLifecycleFxModule = fx.Module(
+	"ws-conn-lifecycle",
 	fx.Provide(
 		fx.Annotate(
-			newConnLcHandler,
+			newConnLifecycleHandler,
 			fx.As(new(synp.Handler)),
 		),
 	),
@@ -32,10 +32,12 @@ type connHandlerFxParams struct {
 	UMsgHandlers []upstream.UMsgHandler `group:"upstream-message-handler"`
 	DMsgHandler  downstream.DMsgHandler
 
+	ConnRegistry synp.ConnRegistry
+
 	Logger *zap.Logger
 }
 
-func newConnLcHandler(params connHandlerFxParams) (*Handler, error) {
+func newConnLifecycleHandler(params connHandlerFxParams) (*Handler, error) {
 	type config struct {
 		CacheRequestTimeout time.Duration `mapstructure:"cache_request_timeout"`
 		CacheExpiration     time.Duration `mapstructure:"cache_expiration"`
@@ -53,6 +55,7 @@ func newConnLcHandler(params connHandlerFxParams) (*Handler, error) {
 		params.Codec,
 		params.DMsgHandler,
 		params.UMsgHandlers,
+		params.ConnRegistry,
 		params.Logger,
 	), nil
 }

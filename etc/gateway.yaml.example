@@ -1,0 +1,36 @@
+# 网关配置示例
+# 复制此文件为 gateway.yaml 并根据实际情况修改
+
+gateway:
+  # 网关节点唯一标识
+  # 建议使用环境变量设置，如：${GATEWAY_NODE_ID}
+  # 在 Kubernetes 中可以使用 pod name
+  # 在物理机/虚拟机部署时可以使用 hostname 或 IP
+  node_id: "gateway-1"
+  
+  # gRPC 服务配置（供后端调用）
+  grpc:
+    # 是否启用 gRPC 服务
+    enable: true
+    
+    # gRPC 监听端口
+    port: 50051
+    
+    # gRPC 服务地址（其他服务调用时使用）
+    # 如果不配置，默认使用 {node_id}:{port}
+    addr: ""
+
+# 示例：使用环境变量
+# gateway:
+#   node_id: "${GATEWAY_NODE_ID}"
+#   grpc:
+#     enable: true
+#     port: 50051
+
+# 示例：Kubernetes 部署
+# gateway:
+#   node_id: "${POD_NAME}"  # 如: gateway-deployment-7d9f6c4b5-x8z9m
+#   grpc:
+#     enable: true
+#     port: 50051
+#     addr: "${POD_IP}:50051"  # 或使用 Service 地址

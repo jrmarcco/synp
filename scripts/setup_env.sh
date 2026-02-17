@@ -31,7 +31,7 @@ go install mvdan.cc/gofumpt@latest
 echo "✅ done"
 
 echo "🚀 install & update golangci-lint ..."
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 echo "✅ done"
 
 echo "🚀 install & update goimports ..."

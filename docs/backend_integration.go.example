@@ -1,0 +1,158 @@
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// 这是后端服务集成网关推送的示例代码
+// 后端需要做的事情：
+// 1. 将消息落库
+// 2. 从Redis查询用户所在的网关节点
+// 3. 调用对应网关节点的gRPC服务推送消息
+
+// BackendIMService 后端IM服务
+type BackendIMService struct {
+	rdb            *redis.Client
+	gatewayClients map[string]GatewayServiceClient // 网关节点 -> gRPC客户端
+}
+
+func NewBackendIMService(rdb *redis.Client, gatewayNodes []string) (*BackendIMService, error) {
+	clients := make(map[string]GatewayServiceClient)
+
+	// 为每个网关节点创建gRPC客户端
+	for _, node := range gatewayNodes {
+		conn, err := grpc.Dial(
+			node, // 如: "gateway-1.example.com:50051"
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to gateway %s: %w", node, err)
+		}
+
+		clients[node] = NewGatewayServiceClient(conn)
+	}
+
+	return &BackendIMService{
+		rdb:            rdb,
+		gatewayClients: clients,
+	}, nil
+}
+
+// HandleMessage 处理消息
+func (s *BackendIMService) HandleMessage(ctx context.Context, msg *Message) error {
+	// 1. 落库（这是最重要的，保证消息可靠性）
+	if err := s.saveMessageToDB(ctx, msg); err != nil {
+		return fmt.Errorf("failed to save message: %w", err)
+	}
+
+	// 2. 推送给接收方
+	for _, receiverUID := range msg.ReceiverUIDs {
+		if err := s.pushMessageToUser(ctx, msg.BID, receiverUID, msg); err != nil {
+			// 推送失败只记录日志，不影响消息落库
+			// 用户上线时会通过拉取离线消息获取
+			fmt.Printf("failed to push message to user %d: %v\n", receiverUID, err)
+		}
+	}
+
+	return nil
+}
+
+// pushMessageToUser 推送消息给指定用户
+func (s *BackendIMService) pushMessageToUser(ctx context.Context, bid, uid uint64, msg *Message) error {
+	// 1. 从Redis查询用户所在的网关节点
+	gatewayNodes, err := s.findGatewayNodes(ctx, bid, uid)
+	if err != nil {
+		return fmt.Errorf("failed to find gateway nodes: %w", err)
+	}
+
+	if len(gatewayNodes) == 0 {
+		// 用户不在线，跳过推送
+		return nil
+	}
+
+	// 2. 调用对应网关节点的gRPC推送消息
+	for _, node := range gatewayNodes {
+		client, ok := s.gatewayClients[node]
+		if !ok {
+			fmt.Printf("gateway client not found for node: %s\n", node)
+			continue
+		}
+
+		resp, err := client.PushMessage(ctx, &PushMessageRequest{
+			Bid:       bid,
+			Uid:       uid,
+			MessageId: msg.MessageID,
+			Body:      msg.Body,
+			NeedRetry: true, // 开启重传
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to call gateway rpc: %w", err)
+		}
+
+		if !resp.Success {
+			fmt.Printf("gateway push failed: %s\n", resp.Reason)
+		}
+	}
+
+	return nil
+}
+
+// findGatewayNodes 从Redis查询用户所在的网关节点
+func (s *BackendIMService) findGatewayNodes(ctx context.Context, bid, uid uint64) ([]string, error) {
+	key := fmt.Sprintf("synp:conn_registry:%d:%d", bid, uid)
+
+	members, err := s.rdb.SMembers(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil // 用户不在线
+		}
+		return nil, err
+	}
+
+	return members, nil
+}
+
+// saveMessageToDB 保存消息到数据库
+func (s *BackendIMService) saveMessageToDB(ctx context.Context, msg *Message) error {
+	// 实现你的数据库存储逻辑
+	return nil
+}
+
+// 辅助类型定义
+type Message struct {
+	BID          uint64
+	MessageID    string
+	SenderUID    uint64
+	ReceiverUIDs []uint64
+	Body         []byte
+}
+
+// GatewayServiceClient gRPC客户端接口（需要根据实际的proto定义生成）
+type GatewayServiceClient interface {
+	PushMessage(ctx context.Context, req *PushMessageRequest, opts ...grpc.CallOption) (*PushMessageResponse, error)
+}
+
+type PushMessageRequest struct {
+	Bid       uint64
+	Uid       uint64
+	MessageId string
+	Body      []byte
+	NeedRetry bool
+}
+
+type PushMessageResponse struct {
+	Success     bool
+	Reason      string
+	OnlineCount int32
+}
+
+func NewGatewayServiceClient(cc grpc.ClientConnInterface) GatewayServiceClient {
+	// 实际实现由protobuf生成
+	return nil
+}

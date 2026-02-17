@@ -7,8 +7,9 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/segmentio/kafka-go"
+
+	"github.com/jrmarcco/synp/internal/pkg/xmq"
 )
 
 const defaultMessageChanSize = 1024

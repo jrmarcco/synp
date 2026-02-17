@@ -11,6 +11,8 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/jrmarcco/jit/bean/option"
+	"go.uber.org/zap"
+
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/limiter"
@@ -18,7 +20,6 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	wsc "github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
-	"go.uber.org/zap"
 )
 
 var ErrUnknownReceiver = errors.New("unknown receiver")
@@ -29,10 +30,10 @@ type Server struct {
 	config *Config
 
 	listener net.Listener
+	upgrader synp.Upgrader
 
-	upgrader    synp.Upgrader
-	connManager synp.ConnManager
 	connHandler synp.Handler
+	connManager synp.ConnManager
 
 	consumers map[string]*gateway.Consumer
 
@@ -50,8 +51,8 @@ type Server struct {
 func NewServer(
 	config *Config,
 	upgrader synp.Upgrader,
-	connManager synp.ConnManager,
 	connHandler synp.Handler,
+	connManager synp.ConnManager,
 	consumers map[string]*gateway.Consumer,
 	logger *zap.Logger,
 	opts ...option.Opt[Server],
@@ -61,11 +62,11 @@ func NewServer(
 		config: config,
 
 		upgrader:    upgrader,
-		connManager: connManager,
 		connHandler: connHandler,
+		connManager: connManager,
 
-		connLimiter: limiter.NewTokenLimiter(limiter.DefaultConfig()), // 默认令牌桶限流器。
-		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略。
+		connLimiter: limiter.NewTokenLimiter(limiter.DefaultConfig()), // 默认令牌桶限流器
+		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略
 
 		consumers: consumers,
 
@@ -82,9 +83,9 @@ func NewServer(
 
 // Start 启动 WebSocket 服务器。
 func (s *Server) Start() error {
-	// 端口启用并监听 upgrade 请求，
-	// 完成 WebSocket 的初始化工作。
-	ln, err := net.Listen(s.config.Network, s.config.Address())
+	// 端口启用并监听 upgrade 请求，完成 WebSocket 的初始化工作。
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(s.ctx, s.config.Network, s.config.Address())
 	if err != nil {
 		return err
 	}
@@ -162,15 +163,13 @@ func (s *Server) acceptConn() {
 				zap.Error(err),
 			)
 			if errors.Is(err, net.ErrClosed) {
-				// net.ErrClosed 表示 listener 已关闭，
-				// 此时可以退出。
+				// net.ErrClosed 表示 listener 已关闭，此时可以退出。
 				return
 			}
 
 			var netOpErr *net.OpError
 			if errors.As(err, &netOpErr) && (netOpErr.Timeout() || netOpErr.Temporary()) {
-				// 如果是 timeout 或 temporary 错误，
-				// 那么可以继续尝试接收连接。
+				// 如果是 timeout 或 temporary 错误，那么可以继续尝试接收连接。
 				continue
 			}
 
@@ -211,7 +210,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 
 	// 创建、管理连接。
-	// 注意，这里的连接指的是 synp.Conn 接口，并不是 net.Conn 接口。
+	// 注意这里的连接指的是 synp.Conn 而不是 net.Conn 接口。
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
 		s.logger.Error(
@@ -241,8 +240,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			zap.Error(err),
 		)
 		// on connect 事件失败，直接返回。
-		// 注：
-		//  这里最好直接返回以防止后续的事件处理发生不可预料的错误。
+		// 这里最好直接返回以防止后续的事件处理发生不可预料的错误。
 		return
 	}
 	defer func() {

@@ -3,11 +3,12 @@ package app
 import (
 	"context"
 
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
-	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 var AppFxModule = fx.Module("app", fx.Invoke(initApp))
@@ -40,7 +41,7 @@ type appFxParams struct {
 func initApp(params appFxParams) *app {
 	wsCfg := ws.DefaultConfig()
 	wsSvr := ws.NewServer(
-		wsCfg, params.Upgrader, params.ConnManager, params.ConnHandler, params.Consumers, params.Logger,
+		wsCfg, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
 	)
 
 	app := &app{

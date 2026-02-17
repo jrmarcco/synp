@@ -1,269 +1,257 @@
-# options for analysis running
+version: "2"
+
 run:
-  go: '1.25'
-
-  # default concurrency is a available CPU number
-  concurrency: 4
-
-  # timeout for analysis, e.g. 30s, 5m, default is 1m
+  # Timeout for total work, e.g. 30s, 5m, 5m30s.
+  # If the value is lower or equal to 0, the timeout is disabled.
+  # Default: 0 (disabled)
   timeout: 5m
 
-issues:
-  # Excluding configuration per-path, per-linter, per-text and per-source
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - funlen
-        - dupl
-        - maintidx
+  # Number of operating system threads (`GOMAXPROCS`) that can execute golangci-lint simultaneously.
+  # Default: 0 (automatically set to match Linux container CPU quota and
+  # fall back to the number of logical CPUs in the machine)
+  concurrency: 4
 
-    - path: go.mod
-      linters:
-        - gomoddirectives
-      text: "local replacement"
-
-    - path: mock/.*\.go
-      linters:
-        - all
-
-  exclude-dirs:
-    - .idea
-    - .git
-    - .github
-    - scripts
-    - etc
-
-# All available settings of specific linters.
-linters-settings:
-  gosec:
-    # 禁用特定的 gosec 检查规则
-    excludes:
-      - G115  # 禁用整数类型转换溢出检查
-  cyclop:
-    max-complexity: 20
-  errcheck:
-    check-type-assertions: true
-  goconst:
-    min-len: 2
-    min-occurrences: 3
-  revive:
-    rules:
-      - name: unused-parameter
-        severity: disabled  # 或 severity: warning
-  gocritic:
-    disabled-checks:
-      - "commentedOutCode"
-      - "commentFormatting"
-      - "assignOp"
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    settings:
-      hugeParam:
-        # Size in bytes that makes the warning trigger.
-        # Default: 80
-        # 性能瓶颈不在这里
-        sizeThreshold: 1024
-  govet:
-    shadow: true
-  nolintlint:
-    require-explanation: true
-    require-specific: true
-  staticcheck:
-    checks:
-      # 禁用 SA4008（"-" 表示排除）
-      # SA4008 用于检测对同一个变量的重复赋值，且中间值从未被使用。
-      # 例如：
-      #   result := defaultValue
-      #   if something {
-      #     result = betterCalculation()
-      #   }
-      #   return result
-      - "-SA4008"
-  exhaustive:
-    check-generated: false
-    default-signifies-exhaustive: true
-  funlen:
-    lines: 100
-    statements: 40
-
-
-# https://olegk.dev/go-linters-configuration-the-right-version
-linters:
-  # Set to true runs only fast linters.
-  # Good option for 'lint on save', pre-commit hook or CI.
-  fast: false
-  # Disable all linters.
+output:
+  # Print lines of code with issue.
+  # Default: true
+  print-issued-lines: true
+  # Print linter name in the end of issue text.
+  # Default: true
+  print-linter-name: true
+  # Make issues output unique by line.
+  # Default: true
+  uniq-by-line: true
+  # Sort results by: filepath, line, and column.
+  sort-results: true
+  # Show statistics per linter.
   # Default: false
-  disable-all: true
-  # Enable specific linter
-  # https://golangci-lint.run/usage/linters/#enabled-by-default
+  show-stats: false
+
+linters:
+  default: none
   enable:
-    # Check for pass []any as any in variadic func(...any).
-    # Rare case but saved me from debugging a few times.
-    - asasalint
-
-    # I prefer plane ASCII identifiers.
-    # Symbol `∆` instead of `delta` looks cool but no thanks.
-    - asciicheck
-
-    # Checks for dangerous unicode character sequences.
-    # Super rare but why not to be a bit paranoid?
-    - bidichk
-
-    # Checks whether HTTP response body is closed successfully.
-    - bodyclose
-
-    # Check whether the function uses a non-inherited context.
-    - contextcheck
-
-    # Checks function and package cyclomatic complexity.
-    #
-    # Cyclomatic complexity is a measurement, not a goal.
-    # (c) Bryan C. Mills / https://github.com/bcmills
-    - cyclop
-
-    # Check for two durations multiplied together.
-    - durationcheck
-
-    # Tool for code clone detection.
-    - dupl
-
-    # Forces to not skip error check.
-    - errcheck
-
-    # Checks `Err-` prefix for var and `-Error` suffix for error type.
-    - errname
-
-    # Suggests to use `%w` for error-wrapping.
-    - errorlint
-
-    # Checks for pointers to enclosing loop variables.
-    - copyloopvar
-
-    - exhaustive
-
-    - funlen
-
-    # Reports magic consts. Might be noisy but still good.
-    - mnd
-
-    # Same as `cyclop` linter (see above)
-    - gocognit
-    - goconst
-    - gocyclo
-
-    # As you already know I'm a co-author. It would be strange to not use
-    # one of my warmly loved projects.
-    - gocritic
-
-    # Forces to put `.` at the end of the comment. Code is poetry.
-#    - godot
-
-    # Might not be that important, but I prefer to keep all of them.
-    # `gofumpt` is amazing, kudos to Daniel Marti https://github.com/mvdan/gofumpt
-    - gofmt
-    - gofumpt
-    - goimports
-
-    # Allow or ban replace directives in go.mod
-    # or force explanation for retract directives.
-    - gomoddirectives
-
-    # Powerful security-oriented linter. But requires some time to
-    # configure it properly, see https://github.com/securego/gosec#available-rules
-    - gosec
-
-    # Linter that specializes in simplifying code.
-    - gosimple
-
+    # ==================== 基础必备 ====================
     # Official Go tool. Must have.
     - govet
-
-    # Detects when assignments to existing variables are not used
-    # Last week I caught a bug with it.
+    # Forces to not skip error check.
+    - errcheck
+    # Detects when assignments to existing variables are not used.
     - ineffassign
+    # Must have. Finds unused declarations.
+    - unused
+    # Apply staticcheck rules (comprehensive static analysis).
+    - staticcheck
 
-    # Fix all the misspells, amazing thing.
-    - misspell
-
-    # Maintainability index of each function, subjective.
-    - maintidx
-
-    # Finds naked/bare returns and requires change them.
-    - nakedret
-
+    # ==================== 错误处理 ====================
+    # Checks `Err-` prefix for var and `-Error` suffix for error type.
+    - errname
+    # Suggests to use `%w` for error-wrapping.
+    - errorlint
     # Both require a bit more explicit returns.
     - nilerr
     - nilnil
 
-    # Finds sending HTTP request without context.Context.
-    - noctx
-
-    # Forces comment why another check is disabled.
-    # Better not to have //nolint: at all ;)
-    - nolintlint
-
-    # Finds slices that could potentially be pre-allocated.
-    # Small performance win + cleaner code.
-    - prealloc
-
-    # Finds shadowing of Go's predeclared identifiers.
-    # I hear a lot of complaints from junior developers.
-    # But after some time they find it very useful.
-    - predeclared
-
-    # Lint your Prometheus metrics name.
-    - promlinter
-
-    - paralleltest
-
-    # Checks that package variables are not reassigned.
-    # Super rare case but can catch bad things (like `io.EOF = nil`)
-    - reassign
-
+    # ==================== 代码质量 ====================
+    # Checks function and package cyclomatic complexity.
+    - cyclop
+    # Tool for code clone detection.
+    - dupl
+    # Reports magic constants. Might be noisy but still good.
+    - mnd
+    # Powerful code checker with many rules.
+    - gocritic
     # Drop-in replacement of `golint`.
     - revive
+    # Check function length.
+    - funlen
+    # Check constants across the code.
+    - goconst
 
-    # Somewhat similar to `bodyclose` but for `database/sql` package.
-    - rowserrcheck
-    - sqlclosecheck
+    # ==================== 性能优化 ====================
+    # Finds slices that could potentially be pre-allocated.
+    - prealloc
+    # Remove unnecessary type conversions.
+    - unconvert
+    # Finds wasted assignment statements.
+    - wastedassign
+    # Might be noisy but better to know what is unused.
+    - unparam
 
-    # I have found that it's not the same as staticcheck binary :\
-    - staticcheck
+    # ==================== 安全检查 ====================
+    # Powerful security-oriented linter.
+    - gosec
+    # Checks for dangerous unicode character sequences.
+    - bidichk
 
-    # Is a replacement for `golint`, similar to `revive`.
-    - stylecheck
+    # ==================== Context 相关 ====================
+    # Finds sending HTTP request without context.Context.
+    - noctx
+    # Check whether the function uses a non-inherited context.
+    - contextcheck
 
+    # ==================== 资源管理 ====================
+    # Checks whether HTTP response body is closed successfully.
+    - bodyclose
+    # Check for two durations multiplied together.
+    - durationcheck
+
+    # ==================== 代码风格 ====================
+    # Finds naked/bare returns and requires change them.
+    - nakedret
     # Check struct tags.
     - tagliatelle
+    # Detect the possibility to use variables/constants from stdlib.
+    - usestdlibvars
+    # Finds shadowing of Go's predeclared identifiers.
+    - predeclared
+    # Fix all the misspells.
+    - misspell
 
-    # Test-related checks. All of them are good.
+    # ==================== 测试相关 ====================
     - usetesting
     - testableexamples
     - thelper
     - tparallel
+    - paralleltest
 
-    # Remove unnecessary type conversions, make code cleaner
-    - unconvert
+    # ==================== 特殊用途 ====================
+    # Check for pass []any as any in variadic func(...any).
+    - asasalint
+    # Checks for pointers to enclosing loop variables.
+    - copyloopvar
+    # Check switch exhaustiveness.
+    - exhaustive
+    # Dependency guard ( forbid some packages ).
+    - depguard
+    # Allow or ban replace directives in go.mod.
+    - gomoddirectives
+    # Check Printf-like function names.
+    - goprintffuncname
+    # Checks that package variables are not reassigned.
+    - reassign
+    # Forces comment why another check is disabled.
+    - nolintlint
+    # Lint your Prometheus metrics name.
+    - promlinter
 
-    # Might be noisy but better to know what is unused
-    - unparam
+  settings:
+    depguard:
+      rules:
+        # pkg 包是业务无关的封装，强制使用 slog 保持框架无关。
+        pkg:
+          files:
+            - "**/pkg/**/*.go"
+            # provider 是 uber/fx 模块的提供者，不需要遵守此规则。
+            - "!**/pkg/provider/**.go"
+          deny:
+            # forbid using zap in pkg directory, use slog instead
+            - pkg: "go.uber.org/zap"
+              desc: "Use log/slog in pkg directory to keep it framework-agnostic"
+            # forbid using logrus
+            - pkg: "github.com/sirupsen/logrus"
+              desc: "Use log/slog for logging in pkg directory"
+            # forbid using pkg/errors, use standard library errors package instead
+            - pkg: "github.com/pkg/errors"
+              desc: "Use standard library errors package instead"
+        # 业务代码禁止使用第三方低质量日志库 ( 允许 slog 或 zap )。
+        main:
+          files:
+            - "!**/pkg/**/*.go"
+          deny:
+            # forbid using logrus
+            - pkg: "github.com/sirupsen/logrus"
+              desc: "Use log/slog or go.uber.org/zap for logging"
+            # forbid using pkg/errors, use standard library errors package instead
+            - pkg: "github.com/pkg/errors"
+              desc: "Use standard library errors package instead"
+            # forbid using testify's fork
+            - pkg: "github.com/instana/testify"
+              desc: "Use github.com/stretchr/testify instead"
+    gosec:
+      excludes:
+        - G115 # Type conversion which leads to integer overflow
+    cyclop:
+      max-complexity: 20
+    errcheck:
+      check-type-assertions: true
+    goconst:
+      min-len: 2
+      min-occurrences: 3
+    revive:
+      rules:
+        - name: unused-parameter
+          severity: disabled  # or severity: warning
+    gocritic:
+      disabled-checks:
+        - commentedOutCode
+        - commentFormatting
+        - assignOp
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      settings:
+        hugeParam:
+          # Size in bytes that makes the warning trigger.
+          # Default: 80
+          sizeThreshold: 1024
+    govet:
+      enable:
+        - nilness
+        - shadow
+    nolintlint:
+      allow-unused: false # report any unused nolint directives
+      require-explanation: true # require an explanation for nolint directives
+      require-specific: true # require nolint directives to be specific about which linter is being skipped
+    staticcheck:
+      checks:
+        # disable SA4008 ( "-" means exclude )
+        # SA4008 is used to detect repeated assignment to the same variable, and the intermediate value is never used.
+        # For example:
+        #   result := defaultValue
+        #   if something {
+        #     result = betterCalculation()
+        #   }
+        #   return result
+        - "-SA4008"
+    exhaustive:
+      check-generated: false
+      default-signifies-exhaustive: true
+    funlen:
+      lines: 100
+      statements: 40
+  exclusions:
+    paths:
+      - .git
+      - .github
+      - .idea
+      - .vscode
+      - scripts
+      - etc
+    rules:
+      - path: go.mod
+        linters:
+          - gomoddirectives
+        text: "local replacement"
+      - path: (.+)_test\.go
+        linters:
+          - funlen
+          - dupl
+      - path: mock/.*\.go
+        linters:
+          - all
 
-    # Must have. Finds unused declarations.
-    - unused
-
-    # Detect the possibility to use variables/constants from stdlib.
-    - usestdlibvars
-
-    # Finds wasted assignment statements.
-    - wastedassign
-
-    # Forces you to use empty lines. Great if configured correctly.
-  #  - wsl
-
-# Options for analysis running.
-
+formatters:
+  enable:
+    - gofumpt
+  exclusions:
+    paths:
+      - .git
+      - .github
+      - .idea
+      - .vscode
+      - scripts
+      - etc
+      - docs

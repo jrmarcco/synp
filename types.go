@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net"
 
+	"go.uber.org/multierr"
+
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/pkg/session"
-	"go.uber.org/multierr"
 )
 
 var ErrRateLimited = errors.New("request too frequently, please try again later")
@@ -42,6 +43,23 @@ type Conn interface {
 	Close() error
 }
 
+// ConnRegistry 是连接注册表，用于管理连接的生命周期。
+// 需要支持多设备场景，一个用户可以在多个网关节点上有连接。
+type ConnRegistry interface {
+	// Register 注册用户连接到当前网关节点。
+	Register(ctx context.Context, user session.User) error
+
+	// Unregister 注销用户连接。
+	Unregister(ctx context.Context, user session.User) error
+
+	// FindNodes 查找用户所有连接所在的网关节点。
+	FindNodes(ctx context.Context, bid, uid uint64) ([]string, error)
+
+	// Heartbeat 心跳，防止连接注册信息过期。
+	Heartbeat(ctx context.Context, user session.User) error
+}
+
+// ConnManager 是连接管理器，用于管理连接的生命周期。
 type ConnManager interface {
 	NewConn(ctx context.Context, netConn net.Conn, sess session.Session, compressionState *compression.State) (Conn, error)
 

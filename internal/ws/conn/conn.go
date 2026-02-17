@@ -11,13 +11,14 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/jrmarcco/jit/bean/option"
 	"github.com/jrmarcco/jit/retry"
+	"go.uber.org/multierr"
+	"go.uber.org/ratelimit"
+	"go.uber.org/zap"
+
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xws"
-	"go.uber.org/multierr"
-	"go.uber.org/ratelimit"
-	"go.uber.org/zap"
 )
 
 var ErrConnClosed = errors.New("connection closed")
@@ -69,215 +70,6 @@ type Conn struct {
 	closeErr  error
 
 	logger *zap.Logger
-}
-
-func (c *Conn) ID() string {
-	return c.id
-}
-
-func (c *Conn) Session() session.Session {
-	return c.sess
-}
-
-func (c *Conn) Send(payload []byte) error {
-	select {
-	case <-c.ctx.Done():
-		return ErrConnClosed
-	case c.sendChan <- payload:
-		if c.ctx.Err() != nil {
-			return ErrConnClosed
-		}
-		return nil
-	}
-}
-
-func (c *Conn) Receive() <-chan []byte {
-	return c.receiveChan
-}
-
-func (c *Conn) UpdateActivityTime() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.ctx.Err() == nil {
-		c.activityTime = time.Now()
-	}
-}
-
-func (c *Conn) Closed() <-chan struct{} {
-	return c.ctx.Done()
-}
-
-func (c *Conn) Close() error {
-	// 注意:
-	//
-	// 不要关闭 c.sendChan，
-	// 这会导致 Send 方法中的 c.sendChan <- payload 分支发生 panic：send on closed channel。
-	c.closeOnce.Do(func() {
-		// 尝试发送 WebSocket 关闭帧。
-		_ = c.netConn.SetWriteDeadline(time.Now().Add(DefaultCloseTimeout))
-		_ = wsutil.WriteServerMessage(c.netConn, ws.OpClose, []byte{})
-
-		// 取消 context。
-		c.cancelFunc()
-
-		// 关闭底层连接 ( net.Conn )。
-		c.closeErr = c.netConn.Close()
-
-		// 销毁 session。
-		ctx, cancel := context.WithTimeout(context.Background(), DefaultCloseTimeout)
-		defer cancel()
-		c.closeErr = multierr.Append(
-			c.closeErr,
-			c.sess.Destroy(ctx),
-		)
-	})
-	return c.closeErr
-}
-
-func (c *Conn) sendLoop() {
-	defer func() {
-		_ = c.Close()
-	}()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case payload, ok := <-c.sendChan:
-			if !ok {
-				return
-			}
-
-			if !c.trySend(payload) {
-				// 发送失败，关闭连接。
-				return
-			}
-		}
-	}
-}
-
-// trySend 是实际发送消息给客户端的逻辑。
-// 在发送失败时，会根据配置使用指数退避策略进行重试，最终重试失败才会返回 false。
-// 注意：
-//
-//	只允许在发生超时时进行重试。
-func (c *Conn) trySend(payload []byte) bool {
-	// 这里可以忽略 error。
-	// 创建 ws.Conn 的时候就应该确保重试策略的参数正确。
-	retryStrategy, _ := retry.NewExponentialBackoffStrategy(
-		c.initRetryInterval, c.maxRetryInterval, c.maxRetryCount,
-	)
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return false
-		default:
-		}
-
-		// 设置写超时。
-		_ = c.netConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-
-		_, err := c.writer.Write(payload)
-		if err == nil {
-			return true
-		}
-
-		c.logger.Error(
-			"[conn] failed to send message to client",
-			zap.String("conn_id", c.id),
-			zap.Int("payload_len", len(payload)),
-			zap.Any("compression_state", c.compressionState),
-			zap.Any("user", c.sess.User()),
-			zap.Error(err),
-		)
-
-		// 检查错误，如果是超时错误则允许重试。
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			duration, ok := retryStrategy.Next()
-			if !ok {
-				// 重试达到上限。
-				c.logger.Error(
-					"[conn] failed to resend message to client, retry reach max",
-					zap.String("conn_id", c.id),
-					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.sess.User()),
-				)
-				return false
-			}
-
-			select {
-			case <-c.ctx.Done():
-				return false
-			case <-time.After(duration):
-				continue
-			}
-		}
-
-		// 非超时错误，直接失败。
-		return false
-	}
-}
-
-func (c *Conn) receiveLoop() {
-	defer func() {
-		close(c.receiveChan)
-		_ = c.Close()
-	}()
-
-	for {
-		if c.limiter != nil {
-			// 获取限流器令牌。
-			c.limiter.Take()
-		}
-
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-		}
-
-		// 设置读超时。
-		_ = c.netConn.SetReadDeadline(time.Now().Add(c.readTimeout))
-
-		payload, err := c.reader.Read()
-		if err != nil {
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				continue
-			}
-
-			var wsErr wsutil.ClosedError
-			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd || wsErr.Code == ws.StatusGoingAway) {
-				// 客户端关闭连接，记录日志直接返回。
-				c.logger.Debug(
-					"[conn] client closed connection",
-					zap.String("conn_id", c.id),
-					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.sess.User()),
-				)
-				return
-			}
-
-			// 其他错误，直接返回。
-			c.logger.Error(
-				"[conn] failed to read message from client",
-				zap.String("conn_id", c.id),
-				zap.Any("compression_state", c.compressionState),
-				zap.Any("user", c.sess.User()),
-				zap.Error(err),
-			)
-			return
-		}
-
-		select {
-		case <-c.ctx.Done():
-			return
-		case c.receiveChan <- payload:
-		}
-	}
 }
 
 func ConnWithReadTimeout(readTimeout time.Duration) option.Opt[Conn] {
@@ -386,4 +178,214 @@ func NewConn(
 	go c.receiveLoop()
 
 	return c
+}
+
+func (c *Conn) ID() string {
+	return c.id
+}
+
+func (c *Conn) Session() session.Session {
+	return c.sess
+}
+
+func (c *Conn) Send(payload []byte) error {
+	select {
+	case <-c.ctx.Done():
+		return ErrConnClosed
+	case c.sendChan <- payload:
+		if c.ctx.Err() != nil {
+			return ErrConnClosed
+		}
+		return nil
+	}
+}
+
+func (c *Conn) Receive() <-chan []byte {
+	return c.receiveChan
+}
+
+func (c *Conn) UpdateActivityTime() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.ctx.Err() == nil {
+		c.activityTime = time.Now()
+	}
+}
+
+func (c *Conn) Closed() <-chan struct{} {
+	return c.ctx.Done()
+}
+
+func (c *Conn) Close() error {
+	// 注意:
+	//
+	// 不要关闭 c.sendChan，
+	// 这会导致 Send 方法中的 c.sendChan <- payload 分支发生 panic：send on closed channel。
+	c.closeOnce.Do(func() {
+		// 尝试发送 WebSocket 关闭帧。
+		_ = c.netConn.SetWriteDeadline(time.Now().Add(DefaultCloseTimeout))
+		_ = wsutil.WriteServerMessage(c.netConn, ws.OpClose, []byte{})
+
+		// 取消 context。
+		c.cancelFunc()
+
+		// 关闭底层连接 ( net.Conn )。
+		c.closeErr = c.netConn.Close()
+
+		// 销毁 session。
+		ctx, cancel := context.WithTimeout(context.Background(), DefaultCloseTimeout)
+		defer cancel()
+		c.closeErr = multierr.Append(
+			c.closeErr,
+			c.sess.Destroy(ctx),
+		)
+	})
+	return c.closeErr
+}
+
+func (c *Conn) sendLoop() {
+	defer func() {
+		_ = c.Close()
+	}()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case payload, ok := <-c.sendChan:
+			if !ok {
+				return
+			}
+
+			if !c.trySend(payload) {
+				// 发送失败，关闭连接。
+				return
+			}
+		}
+	}
+}
+
+// trySend 是实际发送消息给客户端的逻辑。
+// 在发送失败时，会根据配置使用指数退避策略进行重试，最终重试失败才会返回 false。
+// 注意：
+//
+//	只允许在发生超时时进行重试。
+func (c *Conn) trySend(payload []byte) bool {
+	// 这里可以忽略 error。
+	// 创建 ws.Conn 的时候就应该确保重试策略的参数正确。
+	retryStrategy, _ := retry.NewExponentialBackoffStrategy(
+		c.initRetryInterval,
+		c.maxRetryInterval,
+		c.maxRetryCount,
+	)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return false
+		default:
+		}
+
+		// 设置写超时。
+		_ = c.netConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+
+		_, err := c.writer.Write(payload)
+		if err == nil {
+			return true
+		}
+
+		c.logger.Error(
+			"[conn] failed to send message to client",
+			zap.String("conn_id", c.id),
+			zap.Int("payload_len", len(payload)),
+			zap.Any("compression_state", c.compressionState),
+			zap.Any("user", c.sess.User()),
+			zap.Error(err),
+		)
+
+		// 检查错误，如果是超时错误则允许重试。
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			duration, ok := retryStrategy.Next()
+			if !ok {
+				// 重试达到上限。
+				c.logger.Error(
+					"[conn] failed to resend message to client, retry reach max",
+					zap.String("conn_id", c.id),
+					zap.Any("compression_state", c.compressionState),
+					zap.Any("user", c.sess.User()),
+				)
+				return false
+			}
+
+			select {
+			case <-c.ctx.Done():
+				return false
+			case <-time.After(duration):
+				continue
+			}
+		}
+		// 非超时错误，直接失败。
+		return false
+	}
+}
+
+func (c *Conn) receiveLoop() {
+	defer func() {
+		close(c.receiveChan)
+		_ = c.Close()
+	}()
+
+	for {
+		if c.limiter != nil {
+			// 获取限流器令牌。
+			c.limiter.Take()
+		}
+
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+
+		// 设置读超时。
+		_ = c.netConn.SetReadDeadline(time.Now().Add(c.readTimeout))
+
+		payload, err := c.reader.Read()
+		if err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				continue
+			}
+
+			var wsErr wsutil.ClosedError
+			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd || wsErr.Code == ws.StatusGoingAway) {
+				// 客户端关闭连接，记录日志直接返回。
+				c.logger.Debug(
+					"[conn] client closed connection",
+					zap.String("conn_id", c.id),
+					zap.Any("compression_state", c.compressionState),
+					zap.Any("user", c.sess.User()),
+				)
+				return
+			}
+
+			// 其他错误，直接返回。
+			c.logger.Error(
+				"[conn] failed to read message from client",
+				zap.String("conn_id", c.id),
+				zap.Any("compression_state", c.compressionState),
+				zap.Any("user", c.sess.User()),
+				zap.Error(err),
+			)
+			return
+		}
+
+		select {
+		case <-c.ctx.Done():
+			return
+		case c.receiveChan <- payload:
+		}
+	}
 }

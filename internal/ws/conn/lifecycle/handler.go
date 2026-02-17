@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
-	"github.com/jrmarcco/synp/internal/pkg/codec"
+	cc "github.com/jrmarcco/synp/internal/pkg/codec"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
+
+const defaultRegisterTimeout = 3 * time.Second
 
 var (
 	ErrInvalidMessage     = errors.New("invalid message")
@@ -27,17 +30,19 @@ var (
 
 var _ synp.Handler = (*Handler)(nil)
 
-// Handler 是连接事件的处理器。
+// Handler 是连接事件处理器。
 type Handler struct {
 	rdb redis.Cmdable
 
 	cacheRequestTimeout time.Duration
 	cacheExpiration     time.Duration
 
-	codec codec.Codec
+	codec cc.Codec
 
 	dMsgHandler    downstream.DMsgHandler
 	uMsgHandlerMap map[commonv1.CommandType]upstream.UMsgHandler
+
+	connRegistry synp.ConnRegistry
 
 	logger *zap.Logger
 }
@@ -46,9 +51,10 @@ func NewHandler(
 	rdb redis.Cmdable,
 	cacheRequestTimeout time.Duration,
 	cacheExpiration time.Duration,
-	codec codec.Codec,
+	codec cc.Codec,
 	dMsgHandler downstream.DMsgHandler,
 	uMsgHandlers []upstream.UMsgHandler,
+	connRegistry synp.ConnRegistry,
 	logger *zap.Logger,
 ) *Handler {
 	uMsgHandlerMap := make(map[commonv1.CommandType]upstream.UMsgHandler)
@@ -66,22 +72,55 @@ func NewHandler(
 
 		dMsgHandler:    dMsgHandler,
 		uMsgHandlerMap: uMsgHandlerMap,
+		connRegistry:   connRegistry,
 
 		logger: logger,
 	}
 }
 
 func (h *Handler) OnConnect(conn synp.Conn) error {
+	user := conn.Session().User()
+
+	// 注册连接到注册表 ( 用于分布式路由 )。
+	ctx, cancel := context.WithTimeout(context.Background(), defaultRegisterTimeout)
+	defer cancel()
+
+	if err := h.connRegistry.Register(ctx, user); err != nil {
+		h.logger.Error(
+			"[conn-lifecycle-handler] failed to register connection",
+			zap.String("conn_id", conn.ID()),
+			zap.Any("user", user),
+			zap.Error(err),
+		)
+		// 注册失败不影响连接建立，只是分布式路由可能有问题。
+	}
+
 	h.logger.Debug(
-		"[conn-lifecycle-handler] connection connected",
+		"[conn-lifecycle-handler] connection connected and registered",
 		zap.String("conn_id", conn.ID()),
 	)
 	return nil
 }
 
 func (h *Handler) OnDisconnect(conn synp.Conn) error {
+	user := conn.Session().User()
+
+	// 从注册表中注销连接。
+	ctx, cancel := context.WithTimeout(context.Background(), defaultRegisterTimeout)
+	defer cancel()
+
+	if err := h.connRegistry.Unregister(ctx, user); err != nil {
+		// 注销失败不影响连接关闭，只记录日志。
+		h.logger.Error(
+			"[conn-lifecycle-handler] failed to unregister connection",
+			zap.String("conn_id", conn.ID()),
+			zap.Any("user", user),
+			zap.Error(err),
+		)
+	}
+
 	h.logger.Debug(
-		"[conn-lifecycle-handler] connection disconnected",
+		"[conn-lifecycle-handler] connection disconnected and unregistered",
 		zap.String("conn_id", conn.ID()),
 	)
 	return conn.Close()

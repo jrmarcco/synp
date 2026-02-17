@@ -1,0 +1,154 @@
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jrmarcco/synp/internal/pkg/registry"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/fx"
+)
+
+// 方案3：完全独立Redis的实现示例
+
+// 网关侧配置
+type GatewayRedisConfig struct {
+	// 业务Redis（Session、消息缓存等）
+	BusinessRedis *redis.Client
+
+	// 注册中心Redis（连接注册表）
+	RegistryRedis *redis.Client
+}
+
+func NewGatewayRedis() *GatewayRedisConfig {
+	return &GatewayRedisConfig{
+		BusinessRedis: redis.NewClient(&redis.Options{
+			Addr: "gateway-redis.example.com:6379",
+			DB:   0,
+		}),
+		RegistryRedis: redis.NewClient(&redis.Options{
+			Addr: "registry-redis.example.com:6379", // 共享的注册中心
+			DB:   0,
+		}),
+	}
+}
+
+// IM服务端配置
+type BackendRedisConfig struct {
+	// 业务Redis（用户缓存、业务数据等）
+	BusinessRedis *redis.Client
+
+	// 注册中心Redis（查询用户在哪个网关）
+	RegistryRedis *redis.Client
+}
+
+func NewBackendRedis() *BackendRedisConfig {
+	return &BackendRedisConfig{
+		BusinessRedis: redis.NewClient(&redis.Options{
+			Addr: "backend-redis.example.com:6379",
+			DB:   0,
+		}),
+		RegistryRedis: redis.NewClient(&redis.Options{
+			Addr: "registry-redis.example.com:6379", // 同一个注册中心
+			DB:   0,
+		}),
+	}
+}
+
+// 依赖注入配置（网关侧）
+var GatewayRedisFxModule = fx.Module(
+	"gateway-redis",
+	fx.Provide(
+		func() *GatewayRedisConfig {
+			return NewGatewayRedis()
+		},
+
+		// 业务Redis（用于Session等）
+		func(cfg *GatewayRedisConfig) redis.Cmdable {
+			return cfg.BusinessRedis
+		},
+
+		// 注册中心Redis（用于ConnRegistry）
+		fx.Annotate(
+			func(cfg *GatewayRedisConfig) redis.Cmdable {
+				return cfg.RegistryRedis
+			},
+			fx.ResultTags(`name:"registry_redis"`),
+		),
+	),
+)
+
+// 修改 ConnRegistry 的创建
+func newConnRegistryWithSeparateRedis(
+	registryRedis redis.Cmdable, // 注入带tag的Redis
+	gatewayNode string,
+) registry.ConnRegistry {
+	return registry.NewRedisConnRegistry(registryRedis, gatewayNode)
+}
+
+// 使用示例（网关main.go）
+func exampleGatewayMain() {
+	fx.New(
+		// 使用独立的Redis配置
+		GatewayRedisFxModule,
+
+		// ConnRegistry使用注册中心Redis
+		fx.Provide(
+			fx.Annotate(
+				newConnRegistryWithSeparateRedis,
+				fx.ParamTags(`name:"registry_redis"`, ``),
+				fx.As(new(registry.ConnRegistry)),
+			),
+		),
+
+		// 其他模块使用业务Redis
+		// ...
+	).Run()
+}
+
+// IM服务端侧（查询注册表）
+type BackendMessageService struct {
+	registryRedis redis.Cmdable // 注册中心Redis
+	businessRedis redis.Cmdable // 业务Redis
+}
+
+func (s *BackendMessageService) findGatewayNodes(ctx context.Context, bid, uid uint64) ([]string, error) {
+	// 使用注册中心Redis查询
+	key := fmt.Sprintf("synp:conn_registry:%d:%d", bid, uid)
+
+	members, err := s.registryRedis.SMembers(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return members, nil
+}
+
+// 配置对比总结
+func configComparison() {
+	// 方案1：共享（推荐用于开发/小规模生产）
+	_ = `
+网关：redis.example.com:6379
+后端：redis.example.com:6379
+优点：简单，延迟低
+缺点：资源耦合
+	`
+
+	// 方案2：key前缀隔离（推荐用于生产）
+	_ = `
+网关：redis.example.com:6379 (key前缀: gateway:)
+后端：redis.example.com:6379 (key前缀: backend:)
+共享：synp:conn_registry: (不加前缀)
+优点：逻辑隔离，配置简单
+缺点：物理上共享
+	`
+
+	// 方案3：完全独立（推荐用于大规模）
+	_ = `
+网关业务：gateway-redis:6379
+后端业务：backend-redis:6379
+注册中心：registry-redis:6379 (共享)
+优点：完全隔离，可分别优化
+缺点：配置复杂，运维成本高
+	`
+}

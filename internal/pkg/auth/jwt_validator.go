@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jrmarcco/jit/xjwt"
+
 	authv1 "github.com/jrmarcco/synp-api/api/go/auth/v1"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 )

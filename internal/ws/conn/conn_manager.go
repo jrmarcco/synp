@@ -122,6 +122,12 @@ type ConnManager struct {
 	logger *zap.Logger
 }
 
+func ConnManagerWithConfig(cfg *ConnConfig) option.Opt[ConnManager] {
+	return func(m *ConnManager) {
+		m.cfg = cfg
+	}
+}
+
 func NewConnManager(logger *zap.Logger, opts ...option.Opt[ConnManager]) *ConnManager {
 	cfg := &ConnConfig{
 		ReadTimeout:       DefaultReadTiemout,
@@ -180,8 +186,8 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 	return newConn, nil
 }
 
-func (m *ConnManager) loadExistingConn(connKey string, device session.Device) (synp.Conn, bool) {
-	dc, ok := m.conns.Load(connKey)
+func (m *ConnManager) loadExistingConn(key string, device session.Device) (synp.Conn, bool) {
+	dc, ok := m.conns.Load(key)
 	if !ok {
 		return nil, false
 	}
@@ -304,10 +310,4 @@ func (m *ConnManager) FindUserConn(user session.User) ([]synp.Conn, bool) {
 		return nil, false
 	}
 	return dc.findAll()
-}
-
-func ConnManagerWithConfig(cfg *ConnConfig) option.Opt[ConnManager] {
-	return func(m *ConnManager) {
-		m.cfg = cfg
-	}
 }

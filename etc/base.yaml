@@ -2,6 +2,8 @@ profile:
   env: dev
 
 synp:
+  node_id: ${GATEWAY_NODE_ID} # 网关节点标识
+
   # WebSocket 配置
   websocket:
     host: 0.0.0.0

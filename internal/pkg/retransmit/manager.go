@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jrmarcco/jit/xsync"
+
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/message"
