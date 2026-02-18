@@ -1,4 +1,4 @@
-package xproduce
+package xproducer
 
 import (
 	"context"

@@ -8,20 +8,21 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/scram"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 )
 
 type kafkaFxResult struct {
 	fx.Out
 
 	Writer           *kafka.Writer
-	ReaderCreateFunc xconsume.KafkaReaderCreateFunc
+	ReaderCreateFunc xconsumer.KafkaReaderCreateFunc
 }
 
 type kafkaConfig struct {
@@ -67,7 +68,7 @@ type kafkaSaslConfig struct {
 
 	// SCRAM 认证配置
 	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Password string `mapstructure:"password"` //nolint:gosec // Configuration field for Kafka SASL authentication
 
 	// OAuth 认证配置
 	OAuth kafkaOAuthConfig `mapstructure:"oauth"`
@@ -76,7 +77,7 @@ type kafkaSaslConfig struct {
 type kafkaOAuthConfig struct {
 	Endpoint     string `mapstructure:"endpoint"`
 	ClientID     string `mapstructure:"client_id"`
-	ClientSecret string `mapstructure:"client_secret"`
+	ClientSecret string `mapstructure:"client_secret"` //nolint:gosec // Configuration field for OAuth client authentication
 }
 
 func newKafkaClient(zapLogger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResult, error) {

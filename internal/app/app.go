@@ -5,6 +5,7 @@ import (
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/ws"
@@ -14,15 +15,16 @@ import (
 var AppFxModule = fx.Module("app", fx.Invoke(initApp))
 
 type app struct {
-	wsSvr synp.Server
+	*grpc.Server
+	wsServer synp.Server
 }
 
 func (app *app) Start() error {
-	return app.wsSvr.Start()
+	return app.wsServer.Start()
 }
 
 func (app *app) Stop() error {
-	return app.wsSvr.GracefulShutdown()
+	return app.wsServer.GracefulShutdown()
 }
 
 type appFxParams struct {
@@ -39,13 +41,13 @@ type appFxParams struct {
 }
 
 func initApp(params appFxParams) *app {
-	wsCfg := ws.DefaultConfig()
-	wsSvr := ws.NewServer(
-		wsCfg, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
+	wsConfig := ws.DefaultConfig()
+	wsServer := ws.NewServer(
+		wsConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
 	)
 
 	app := &app{
-		wsSvr: wsSvr,
+		wsServer: wsServer,
 	}
 
 	params.Lifecycle.Append(fx.Hook{

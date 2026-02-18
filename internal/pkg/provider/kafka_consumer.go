@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
-	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
+	"github.com/jrmarcco/synp/internal/ws/gateway"
 )
 
-func newKafkaConsumers(factory xconsume.ConsumerFactory, logger *zap.Logger) (map[string]*gateway.Consumer, error) {
+func newKafkaConsumers(factory xconsumer.ConsumerFactory, logger *zap.Logger) (map[string]*gateway.Consumer, error) {
 	consumers := make(map[string]*gateway.Consumer)
 
 	pushMessageConsumer, err := pushMessageConsumer(factory, logger)
@@ -22,7 +23,7 @@ func newKafkaConsumers(factory xconsume.ConsumerFactory, logger *zap.Logger) (ma
 	return consumers, err
 }
 
-func pushMessageConsumer(factory xconsume.ConsumerFactory, logger *zap.Logger) (*gateway.Consumer, error) {
+func pushMessageConsumer(factory xconsumer.ConsumerFactory, logger *zap.Logger) (*gateway.Consumer, error) {
 	type config struct {
 		Topic         string        `mapstructure:"topic"`
 		GroupID       string        `mapstructure:"group_id"`

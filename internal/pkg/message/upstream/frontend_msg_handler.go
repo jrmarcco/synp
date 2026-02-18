@@ -6,13 +6,14 @@ import (
 	"log/slog"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
-	"google.golang.org/protobuf/encoding/protojson"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
 )
 
 var _ UMsgHandler = (*FrontendMsgHandler)(nil)
@@ -22,14 +23,14 @@ type FrontendMsgHandler struct {
 	topic            string        // 消息队列 topic
 	onReceiveTimeout time.Duration // 接收消息超时时间
 
-	producer xproduce.Producer
+	producer xproducer.Producer
 	pushFunc message.PushFunc
 }
 
 func NewFrontendMsgHandler(
 	topic string,
 	onReceiveTimeout time.Duration,
-	producer xproduce.Producer,
+	producer xproducer.Producer,
 	pushFunc message.PushFunc,
 ) *FrontendMsgHandler {
 	return &FrontendMsgHandler{

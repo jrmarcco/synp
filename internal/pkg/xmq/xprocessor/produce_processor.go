@@ -1,22 +1,22 @@
-package xprocess
+package xprocessor
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
 )
 
 // ProduceProcessor 是通用的生产处理器。
 // 它封装了消息生产的逻辑，提供统一的接口。
 type ProduceProcessor struct {
 	topic    string
-	producer xproduce.Producer
+	producer xproducer.Producer
 }
 
 // NewProduceProcessor 创建一个新的生产处理器。
-func NewProduceProcessor(topic string, producer xproduce.Producer) (*ProduceProcessor, error) {
+func NewProduceProcessor(topic string, producer xproducer.Producer) (*ProduceProcessor, error) {
 	if topic == "" {
 		return nil, fmt.Errorf("topic is required")
 	}

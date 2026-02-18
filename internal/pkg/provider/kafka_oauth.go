@@ -41,12 +41,12 @@ func (m *KafkaOAuthMechanism) Start(ctx context.Context) (ss sasl.StateMachine, 
 
 	// 构造 OAuthBearer 初始响应 ( 格式 n,,\x01auth=Bearer <token>\x01\x01 )。
 	//
-	// 根据 RFC 7628 第 3.1 节，GS2 header 部分:
+	// 根据 RFC 7628 第 3.1 节，GS2 header 部分：
 	// 	- "n" 表示客户端不支持 channel binding。
 	// 	- 第一个逗号后为可选的 authzid，留空表示让 Kafka 从 token 的 sub 字段中提取 principal。
 	// 	- 第二个逗号后为可选的保留字段，通常为空。
 	//
-	// 注意:
+	// 注意：
 	// 	不能在 authzid 中指定用户名 ( 如 service-account-kafka-client )。
 	//  因为 Kafka 会验证它是否与 token 中的 sub 字段匹配。
 	initialResponse := fmt.Sprintf("n,,\x01auth=Bearer %s\x01\x01", token)
@@ -87,7 +87,7 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 	const httpTimeout = 5 * time.Second
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // OAuth endpoint is from trusted configuration
 	if err != nil {
 		return "", fmt.Errorf("failed to send http request: %w", err)
 	}
@@ -106,7 +106,7 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 
 	//nolint:tagliatelle // OAuth2 标准使用 snake_case
 	var tokenRes struct {
-		AccessToken string `json:"access_token"`
+		AccessToken string `json:"access_token"` //nolint:gosec // OAuth token response parsing
 		TokenType   string `json:"token_type"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
@@ -135,7 +135,7 @@ var _ sasl.StateMachine = (*kafkaOAuthSession)(nil)
 type kafkaOAuthSession struct{}
 
 func (s *kafkaOAuthSession) Next(_ context.Context, _ []byte) (done bool, response []byte, err error) {
-	// OAUTHBEARER 是单次往返认证，第一次响应后就完成，
+	// OAUTHBEARER 是单次往返认证，第一次响应后就完成。
 	// 服务器可能发送空的成功响应。
 	return true, nil, nil
 }

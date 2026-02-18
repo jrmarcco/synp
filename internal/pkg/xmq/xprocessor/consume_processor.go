@@ -1,4 +1,4 @@
-package xprocess
+package xprocessor
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 )
 
 // TopicConfig 定义单个消费者的配置。
@@ -27,14 +27,14 @@ type ConsumeProcessorConfig struct {
 // 它负责管理多个消费者的生命周期，并将消息分发给处理函数。
 type ConsumeProcessor struct {
 	cfg     ConsumeProcessorConfig
-	factory xconsume.ConsumerFactory
+	factory xconsumer.ConsumerFactory
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 }
 
 // NewConsumeProcessor 创建一个新的消费处理器。
-func NewConsumeProcessor(cfg ConsumeProcessorConfig, factory xconsume.ConsumerFactory) *ConsumeProcessor {
+func NewConsumeProcessor(cfg ConsumeProcessorConfig, factory xconsumer.ConsumerFactory) *ConsumeProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ConsumeProcessor{
 		cfg:     cfg,
@@ -73,7 +73,7 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 			)
 			return err
 		}
-		// 注意:
+		// 注意：
 		// 	这里使用 p.ctx ( 内部 context ) 而不是传入的 ctx。
 		//  方法参数 ctx 仅用于控制 Start 方法操作本身的超时和取消。
 		//  p.ctx 用于控制消费 goroutine 的生命周期 ( 直到调用 Stop 方法 )。

@@ -55,7 +55,7 @@ type Conn struct {
 	autoClose    bool
 	activityTime time.Time
 
-	// 限流:
+	// 限流：
 	//
 	// 	这里使用 uber 的 ratelimit 库，是一个基于漏桶算法（Leaky Bucket）的限流器。
 	// 	WebSocket 消息处理需要平滑，避免突发消息阻塞 receiveChan。

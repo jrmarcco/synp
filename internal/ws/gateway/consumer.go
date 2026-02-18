@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsume"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocess"
 	"go.uber.org/zap"
+
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocessor"
 )
 
 type Consumer struct {
@@ -16,8 +17,8 @@ type Consumer struct {
 	partitions    int32
 	handleTimeout time.Duration
 
-	factory   xconsume.ConsumerFactory
-	processor *xprocess.ConsumeProcessor
+	factory   xconsumer.ConsumerFactory
+	processor *xprocessor.ConsumeProcessor
 
 	logger *zap.Logger
 }
@@ -26,7 +27,7 @@ func NewConsumer(
 	topic, groupID string,
 	partitions int32,
 	handleTimeout time.Duration,
-	factory xconsume.ConsumerFactory,
+	factory xconsumer.ConsumerFactory,
 	logger *zap.Logger,
 ) (*Consumer, error) {
 	if topic == "" || groupID == "" || partitions <= 0 {
@@ -45,22 +46,22 @@ func NewConsumer(
 	}, nil
 }
 
-func (c *Consumer) StartConsumer(ctx context.Context, handler xprocess.MsgHandler) error {
+func (c *Consumer) StartConsumer(ctx context.Context, handler xprocessor.MsgHandler) error {
 	if handler == nil {
 		return fmt.Errorf("handler is required")
 	}
 
 	// 为每个分区创建主题配置。
-	topics := make([]xprocess.TopicConfig, c.partitions)
+	topics := make([]xprocessor.TopicConfig, c.partitions)
 	for i := range c.partitions {
-		topics[i] = xprocess.TopicConfig{
+		topics[i] = xprocessor.TopicConfig{
 			Topic:   c.topic,
 			GroupID: c.groupID,
 		}
 	}
 
-	c.processor = xprocess.NewConsumeProcessor(
-		xprocess.ConsumeProcessorConfig{
+	c.processor = xprocessor.NewConsumeProcessor(
+		xprocessor.ConsumeProcessorConfig{
 			Topics:        topics,
 			Handler:       handler,
 			HandleTimeout: c.handleTimeout,

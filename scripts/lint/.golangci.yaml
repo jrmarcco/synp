@@ -5,27 +5,20 @@ run:
   # If the value is lower or equal to 0, the timeout is disabled.
   # Default: 0 (disabled)
   timeout: 5m
-
   # Number of operating system threads (`GOMAXPROCS`) that can execute golangci-lint simultaneously.
   # Default: 0 (automatically set to match Linux container CPU quota and
   # fall back to the number of logical CPUs in the machine)
   concurrency: 4
 
 output:
-  # Print lines of code with issue.
-  # Default: true
-  print-issued-lines: true
-  # Print linter name in the end of issue text.
-  # Default: true
-  print-linter-name: true
-  # Make issues output unique by line.
-  # Default: true
-  uniq-by-line: true
-  # Sort results by: filepath, line, and column.
-  sort-results: true
+  # By default, the report are related to the path obtained by `run.relative-path-mode`.
+  # The mode `abs` allows to show absolute file paths instead of relative file paths.
+  # The option `output.path-prefix` is ignored when using `abs` mode.
+  # Default: ""
+  path-mode: "abs"
   # Show statistics per linter.
-  # Default: false
-  show-stats: false
+  # Default: true
+  show-stats: true
 
 linters:
   default: none

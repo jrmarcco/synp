@@ -7,7 +7,7 @@ require (
 	github.com/gobwas/httphead v0.1.0
 	github.com/gobwas/ws v1.4.0
 	github.com/jrmarcco/jit v0.0.4
-	github.com/jrmarcco/synp-api v0.0.6
+	github.com/jrmarcco/synp-api v0.0.7
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/viper v1.21.0

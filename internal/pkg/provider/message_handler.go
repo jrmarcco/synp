@@ -3,15 +3,16 @@ package provider
 import (
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/retransmit"
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xproduce"
-	"github.com/spf13/viper"
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
 )
 
-func newFrontendMsgHandler(producer xproduce.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {
+func newFrontendMsgHandler(producer xproducer.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {
 	type config struct {
 		Topic            string `mapstructure:"topic"`
 		OnReceiveTimeout int    `mapstructure:"on_receive_timeout"`

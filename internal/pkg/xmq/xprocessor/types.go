@@ -1,4 +1,4 @@
-package xprocess
+package xprocessor
 
 import (
 	"context"

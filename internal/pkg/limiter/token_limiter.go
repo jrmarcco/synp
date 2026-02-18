@@ -51,14 +51,14 @@ func NewConfig(initCapacity, maxCapacity, increaseStep int64, increaseInterval t
 func DefaultConfig() TokenLimiterConfig {
 	// 默认配置。
 	//
-	// 从初始容量扩容到最大容量需要:
-	//  |-- 增量: 50000 - 2000 = 48000
-	//  |-- 次数: 48000 ÷ 500 = 96 次
-	//  |-- 时间: 96 × 2s  = 192s ( 约 3.2 分钟 )
+	// 从初始容量扩容到最大容量需要：
+	//  |-- 增量：50000 - 2000 = 48000
+	//  |-- 次数：48000 ÷ 500 = 96 次
+	//  |-- 时间：96 × 2s  = 192s ( 约 3.2 分钟 )
 	//
-	// 推荐设置:
-	//  |-- 小规模场景: InitCapacity = 500  / MaxCapacity = 10000
-	//  |-- 大规模场景: InitCapacity = 5000 / MaxCapacity = 100000
+	// 推荐设置：
+	//  |-- 小规模场景：InitCapacity = 500  / MaxCapacity = 10000
+	//  |-- 大规模场景：InitCapacity = 5000 / MaxCapacity = 100000
 	const (
 		defaultInitCapacity     = int64(2000)
 		defaultMaxCapacity      = int64(50000)

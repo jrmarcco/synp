@@ -1,4 +1,4 @@
-package xconsume
+package xconsumer
 
 import (
 	"context"
