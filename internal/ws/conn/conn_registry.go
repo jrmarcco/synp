@@ -17,6 +17,15 @@ const (
 	defaultKeyPrefix = "synp:conn_registry"
 )
 
+const registerScript = `
+redis.call("SADD", KEYS[1], ARGV[1])
+local ok = redis.call("PEXPIRE", KEYS[1], ARGV[2])
+if ok == 0 then
+	return redis.error_reply("failed to set pexpire")
+end
+return 1
+`
+
 var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 
 // ConnRegistry 是连接注册表。
@@ -65,14 +74,21 @@ func NewConnRegistry(rdb redis.Cmdable, node string, logger *zap.Logger, opts ..
 }
 
 // Register 注册用户连接到当前网关节点。
+//
 // 使用 Redis Set 结构存储。
 //   - key: key_prefix:{bid}:{uid}
 //   - val: [node-1, node-2]
 func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 	key := r.key(user.BID, user.UID)
+	ttlMillis := r.ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		return fmt.Errorf("invalid ttl: %s", r.ttl)
+	}
 
-	// 将当前网关节点添加到用户的节点集合中。
-	if err := r.rdb.SAdd(ctx, key, r.node).Err(); err != nil {
+	// 原子地执行 SADD + PEXPIRE 避免 SADD 成功但 EXPIRE 失败导致脏数据常驻。
+	// 这里使用的 PEXPIRE 命令以毫秒为单位 ( EXPIRE 命令以秒为单位 )。
+	res, err := r.rdb.Eval(ctx, registerScript, []string{key}, r.node, ttlMillis).Result()
+	if err != nil {
 		r.logger.Error(
 			"[conn-registry] failed to register connection",
 			zap.String("key", key),
@@ -82,16 +98,10 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 		return fmt.Errorf("failed to register connection: %w", err)
 	}
 
-	// 设置 ttl。
-	if err := r.rdb.Expire(ctx, key, r.ttl).Err(); err != nil {
-		r.logger.Error(
-			"[conn-registry] failed to set expire time",
-			zap.String("key", key),
-			zap.String("node", r.node),
-			zap.Error(err),
-		)
-		return fmt.Errorf("failed to set expire time: %w", err)
+	if res != "ok" {
+		return fmt.Errorf("failed to register connection: failed to set pexpire")
 	}
+
 	return nil
 }
 
