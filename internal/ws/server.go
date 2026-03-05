@@ -11,8 +11,6 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/jrmarcco/jit/bean/option"
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/limiter"
@@ -20,6 +18,7 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	wsc "github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"go.uber.org/zap"
 )
 
 var ErrUnknownReceiver = errors.New("unknown receiver")

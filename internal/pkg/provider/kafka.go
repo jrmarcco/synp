@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/scram"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
-
-	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 )
 
 type kafkaFxResult struct {

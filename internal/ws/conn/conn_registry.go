@@ -31,8 +31,8 @@ var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 // ConnRegistry 是连接注册表。
 //
 // ┌───────────────┐
-// │    Redis      │
-// │ user → Set    │
+// │     Redis     │
+// │ user  →  set  │
 // │  ├─ node-1    │  ← 手机连接
 // │  └─ node-2    │  ← PC连接
 // └───────────────┘

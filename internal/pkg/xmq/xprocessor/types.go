@@ -6,6 +6,8 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 )
 
+//go:generate mockgen -source=types.go -destination=mock/xprocessor.mock.go -package=xprocessormock -typed Processor
+
 // MsgHandler 是处理消息的函数类型。
 type MsgHandler func(ctx context.Context, msg *xmq.Message) error
 

@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocessor"
+	"go.uber.org/zap"
 )
 
 type Consumer struct {

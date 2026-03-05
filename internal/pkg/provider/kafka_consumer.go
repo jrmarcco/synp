@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
 )
 
 func newKafkaConsumers(factory xconsumer.ConsumerFactory, logger *zap.Logger) (map[string]*gateway.Consumer, error) {

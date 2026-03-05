@@ -3,13 +3,12 @@ package provider
 import (
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/retransmit"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
+	"github.com/spf13/viper"
 )
 
 func newFrontendMsgHandler(producer xproducer.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {

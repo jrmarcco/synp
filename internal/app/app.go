@@ -3,13 +3,12 @@ package app
 import (
 	"context"
 
-	"go.uber.org/fx"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 var AppFxModule = fx.Module("app", fx.Invoke(initApp))

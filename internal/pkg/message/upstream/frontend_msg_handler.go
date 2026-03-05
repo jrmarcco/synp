@@ -6,14 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 var _ UMsgHandler = (*FrontendMsgHandler)(nil)

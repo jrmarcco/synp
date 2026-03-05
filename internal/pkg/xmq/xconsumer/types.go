@@ -6,6 +6,8 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 )
 
+//go:generate mockgen -source=types.go -destination=mock/xconsumer.mock.go -package=xconsumermock -typed ConsumerFactory,Consumer
+
 // ConsumerFactory 是创建消费者的工厂函数。
 type ConsumerFactory interface {
 	NewConsumer(topic, groupID string) (Consumer, error)

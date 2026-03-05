@@ -11,14 +11,13 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/jrmarcco/jit/bean/option"
 	"github.com/jrmarcco/jit/retry"
-	"go.uber.org/multierr"
-	"go.uber.org/ratelimit"
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xws"
+	"go.uber.org/multierr"
+	"go.uber.org/ratelimit"
+	"go.uber.org/zap"
 )
 
 var ErrConnClosed = errors.New("connection closed")

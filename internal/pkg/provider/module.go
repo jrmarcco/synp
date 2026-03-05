@@ -1,14 +1,13 @@
 package provider
 
 import (
-	"go.uber.org/fx"
-
 	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
+	"go.uber.org/fx"
 )
 
 var (

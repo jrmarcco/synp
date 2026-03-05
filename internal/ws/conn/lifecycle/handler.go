@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	cc "github.com/jrmarcco/synp/internal/pkg/codec"
 	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 const defaultRegisterTimeout = 3 * time.Second

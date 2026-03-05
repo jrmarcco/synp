@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/jrmarcco/synp/internal/pkg/session"
+	"github.com/redis/go-redis/v9"
 )
 
 //go:embed lua/session_create.lua
