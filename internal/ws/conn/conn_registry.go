@@ -2,14 +2,16 @@ package conn
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"time"
 
 	"github.com/jrmarcco/jit/bean/option"
-	"github.com/jrmarcco/synp"
-	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+
+	"github.com/jrmarcco/synp"
+	"github.com/jrmarcco/synp/internal/pkg/session"
 )
 
 const (
@@ -17,14 +19,8 @@ const (
 	defaultKeyPrefix = "synp:conn_registry"
 )
 
-const registerScript = `
-redis.call("SADD", KEYS[1], ARGV[1])
-local ok = redis.call("PEXPIRE", KEYS[1], ARGV[2])
-if ok == 0 then
-	return redis.error_reply("failed to set pexpire")
-end
-return 1
-`
+//go:embed lua/conn_register.lua
+var connRegisterLua string
 
 var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 
@@ -87,7 +83,7 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 
 	// 原子地执行 SADD + PEXPIRE 避免 SADD 成功但 EXPIRE 失败导致脏数据常驻。
 	// 这里使用的 PEXPIRE 命令以毫秒为单位 ( EXPIRE 命令以秒为单位 )。
-	res, err := r.rdb.Eval(ctx, registerScript, []string{key}, r.node, ttlMillis).Result()
+	res, err := r.rdb.Eval(ctx, connRegisterLua, []string{key}, r.node, ttlMillis).Result()
 	if err != nil {
 		r.logger.Error(
 			"[conn-registry] failed to register connection",
