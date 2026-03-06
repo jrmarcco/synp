@@ -8,6 +8,7 @@ require (
 	github.com/gobwas/ws v1.4.0
 	github.com/jrmarcco/jit v0.0.4
 	github.com/jrmarcco/synp-api v0.0.7
+	github.com/jrmarcco/xgrpc v0.0.1
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/viper v1.21.0
@@ -30,7 +31,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/jrmarcco/xgrpc v0.0.1 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
