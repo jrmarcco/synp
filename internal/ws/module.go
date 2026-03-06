@@ -14,13 +14,13 @@ var UpgraderFxModule = fx.Module(
 	"ws-upgrader",
 	fx.Provide(
 		fx.Annotate(
-			newWsUpgrader,
+			newWebSocketUpgrader,
 			fx.As(new(synp.Upgrader)),
 		),
 	),
 )
 
-func newWsUpgrader(rdb redis.Cmdable, validator auth.Validator, logger *zap.Logger) (*Upgrader, error) {
+func newWebSocketUpgrader(rdb redis.Cmdable, validator auth.Validator, logger *zap.Logger) (*Upgrader, error) {
 	type config struct {
 		Enabled                 bool `mapstructure:"enabled"`
 		ServerMaxWindowBits     int  `mapstructure:"server_max_window_bits"`
