@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/jrmarcco/jit/bean/option"
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
-
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/session"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 const (
