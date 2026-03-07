@@ -2,12 +2,12 @@
 # scripts/etcdctl.sh
 
 # ================ ↓ 连接参数 ↓ ================ #
-ETCD_ENDPOINTS="192.168.3.3:42379,192.168.3.3:42381,192.168.3.3:42383"
+ETCD_ENDPOINTS="192.168.3.3:12379,192.168.3.3:22379,192.168.3.3:32379"
 ETCD_USER="root"
 ETCD_PASSWORD="<root_passwd>"
 
 # TLS 证书路径
-CERT_DIR="$HOME/Projects/synp/etc/certs/etcd"
+CERT_DIR="./certs"
 CLIENT_CERT="$CERT_DIR/client.pem"
 CLIENT_KEY="$CERT_DIR/client-key.pem"
 CA_CERT="$CERT_DIR/ca.pem"
@@ -17,23 +17,40 @@ CA_CERT="$CERT_DIR/ca.pem"
 USE_TLS=false
 if [ -f "$CLIENT_CERT" ] && [ -f "$CLIENT_KEY" ] && [ -f "$CA_CERT" ]; then
     USE_TLS=true
-    echo "🔒 检测到 TLS 证书，自动启用 TLS 连接"
+    echo "🔒 检测到 TLS 证书 - 自动启用 TLS 连接"
     ETCD_ENDPOINTS=$(echo "$ETCD_ENDPOINTS" | sed 's/\([^,]*\)/https:\/\/\1/g')
 else
-    echo "🔓 未检测到 TLS 证书，使用普通连接"
+    echo "🔓 未检测到 TLS 证书 - 使用普通连接"
+fi
+
+# 先构建不带认证参数的基础命令
+if [ "$USE_TLS" = true ]; then
+    ETCDCTL_BASE_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS \
+                        --cert=$CLIENT_CERT \
+                        --key=$CLIENT_KEY \
+                        --cacert=$CA_CERT"
+else
+    ETCDCTL_BASE_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS"
+fi
+
+# 自动检测服务端是否启用认证：
+# - 已启用：保留 --user
+# - 未启用：不拼接 --user 避免出现 "authentication is not enabled" 警告
+AUTH_PROBE_OUTPUT=$(sh -c "$ETCDCTL_BASE_CMD --user=$ETCD_USER:$ETCD_PASSWORD endpoint status --write-out=json 2>&1" || true)
+if echo "$AUTH_PROBE_OUTPUT" | grep -q "authentication is not enabled"; then
+    AUTH_ENABLED=false
+    echo "ℹ️  检测到 etcd 未启用认证 - 不附加 --user 参数"
+else
+    AUTH_ENABLED=true
+    echo "🔐 检测到 etcd 已启用认证 - 自动附加 --user 参数"
 fi
 
 
 # 构建 etcdctl 命令
-if [ "$USE_TLS" = true ]; then
-    ETCDCTL_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS \
-                        --cert=$CLIENT_CERT \
-                        --key=$CLIENT_KEY \
-                        --cacert=$CA_CERT \
-                        --user=$ETCD_USER:$ETCD_PASSWORD"
+if [ "$AUTH_ENABLED" = true ]; then
+    ETCDCTL_CMD="$ETCDCTL_BASE_CMD --user=$ETCD_USER:$ETCD_PASSWORD"
 else
-    ETCDCTL_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS \
-                        --user=$ETCD_USER:$ETCD_PASSWORD"
+    ETCDCTL_CMD="$ETCDCTL_BASE_CMD"
 fi
 
 # 显示帮助信息
@@ -84,6 +101,7 @@ show_help() {
     echo "👥 用户和权限管理："
     echo "  user-list                 列出所有用户"
     echo "  user-add <name>           添加用户"
+    echo "  user-passwd <name>        修改用户密码"
     echo "  user-delete <name>        删除用户"
     echo "  user-get <name>           获取用户信息"
     echo "  role-list                 列出所有角色"
@@ -352,6 +370,17 @@ case "$1" in
         echo "👤 添加用户: $2"
         $ETCDCTL_CMD user add "$2"
         echo "✅ 用户添加成功"
+        ;;
+    "user-passwd")
+        if [ -z "$2" ]; then
+            echo "❌ 错误: 请提供用户名"
+            echo "用法: $0 user-passwd <username>"
+            exit 1
+        fi
+        echo "🔑 修改用户密码: $2"
+        echo "请输入新密码并确认..."
+        $ETCDCTL_CMD user passwd "$2"
+        echo "✅ 用户密码修改成功"
         ;;
     "user-delete")
         if [ -z "$2" ]; then

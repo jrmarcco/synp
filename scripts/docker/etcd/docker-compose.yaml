@@ -1,137 +1,88 @@
-name: synp-etcd
-services:
-  node-1:
-    image: bitnami/etcd:latest
-    restart: unless-stopped
-    ports:
-      - "42379:2379"  # Client port ( HTTPS only )
-      - "42380:2380"  # Peer port ( HTTPS only )
-    environment:
-      # Basic settings
-      - ALLOW_NONE_AUTHENTICATION=no
-      - ETCD_NAME=etcd-1
-      - ETCD_ROOT_PASSWORD=${ETCD_ROOT_PASSWORD}
-      # Data directory
-      - ETCD_DATA_DIR=/opt/bitnami/etcd/data
-      # ===== 强制 TLS 客户端连接配置 =====
-      - ETCD_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_CLIENT_CERT_AUTH=true
-      - ETCD_AUTO_TLS=false
-      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
-      - ETCD_ADVERTISE_CLIENT_URLS=https://node-1:2379
-      # ===== 强制 TLS 对等连接配置 =====
-      - ETCD_PEER_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_PEER_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_PEER_CLIENT_CERT_AUTH=true
-      - ETCD_PEER_AUTO_TLS=false
-      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
-      - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-1:2380
-      # ===== 集群配置 =====
-      - ETCD_INITIAL_CLUSTER_TOKEN=synp-etcd-cluster
-      - ETCD_INITIAL_CLUSTER=etcd-1=https://node-1:2380,etcd-2=https://node-2:2380,etcd-3=https://node-3:2380
-      - ETCD_INITIAL_CLUSTER_STATE=new
-      # ===== 安全增强配置 =====
-      - ETCD_CIPHER_SUITES=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-      - ETCD_TLS_MIN_VERSION=TLS1.2
-    volumes:
-      - ./data-1:/opt/bitnami/etcd/data
-      - ./certs:/opt/bitnami/etcd/certs:ro
-    networks:
-      - synp-network
-
-  node-2:
-    image: bitnami/etcd:latest
-    restart: unless-stopped
-    ports:
-      - "42381:2379"  # Client port ( HTTPS only )
-      - "42382:2380"  # Peer port ( HTTPS only )
-    environment:
-      # Basic settings
-      - ALLOW_NONE_AUTHENTICATION=no
-      - ETCD_NAME=etcd-2
-      - ETCD_ROOT_PASSWORD=${ETCD_ROOT_PASSWORD}
-      # Data directory
-      - ETCD_DATA_DIR=/opt/bitnami/etcd/data
-      # ===== 强制 TLS 客户端连接配置 =====
-      - ETCD_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_CLIENT_CERT_AUTH=true
-      - ETCD_AUTO_TLS=false
-      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
-      - ETCD_ADVERTISE_CLIENT_URLS=https://node-2:2379
-      # ===== 强制 TLS 对等连接配置 =====
-      - ETCD_PEER_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_PEER_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_PEER_CLIENT_CERT_AUTH=true
-      - ETCD_PEER_AUTO_TLS=false
-      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
-      - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-2:2380
-      # ===== 集群配置 =====
-      - ETCD_INITIAL_CLUSTER_TOKEN=synp-etcd-cluster
-      - ETCD_INITIAL_CLUSTER=etcd-1=https://node-1:2380,etcd-2=https://node-2:2380,etcd-3=https://node-3:2380
-      - ETCD_INITIAL_CLUSTER_STATE=new
-      # ===== 安全增强配置 =====
-      - ETCD_CIPHER_SUITES=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-      - ETCD_TLS_MIN_VERSION=TLS1.2
-    volumes:
-      - ./data-2:/opt/bitnami/etcd/data
-      - ./certs:/opt/bitnami/etcd/certs:ro
-    networks:
-      - synp-network
-
-  node-3:
-    image: bitnami/etcd:latest
-    restart: unless-stopped
-    ports:
-      - "42383:2379"  # Client port ( HTTPS only )
-      - "42384:2380"  # Peer port ( HTTPS only )
-    environment:
-      # Basic settings
-      - ALLOW_NONE_AUTHENTICATION=no
-      - ETCD_NAME=etcd-3
-      - ETCD_ROOT_PASSWORD=${ETCD_ROOT_PASSWORD}
-      # Data directory
-      - ETCD_DATA_DIR=/opt/bitnami/etcd/data
-      # ===== 强制 TLS 客户端连接配置 =====
-      - ETCD_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_CLIENT_CERT_AUTH=true
-      - ETCD_AUTO_TLS=false
-      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
-      - ETCD_ADVERTISE_CLIENT_URLS=https://node-3:2379
-      # ===== 强制 TLS 对等连接配置 =====
-      - ETCD_PEER_CERT_FILE=/opt/bitnami/etcd/certs/server.pem
-      - ETCD_PEER_KEY_FILE=/opt/bitnami/etcd/certs/server-key.pem
-      - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
-      - ETCD_PEER_CLIENT_CERT_AUTH=true
-      - ETCD_PEER_AUTO_TLS=false
-      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
-      - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
-      - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-3:2380
-      # ===== 集群配置 =====
-      - ETCD_INITIAL_CLUSTER_TOKEN=synp-etcd-cluster
-      - ETCD_INITIAL_CLUSTER=etcd-1=https://node-1:2380,etcd-2=https://node-2:2380,etcd-3=https://node-3:2380
-      - ETCD_INITIAL_CLUSTER_STATE=new
-      # ===== 安全增强配置 =====
-      - ETCD_CIPHER_SUITES=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-      - ETCD_TLS_MIN_VERSION=TLS1.2
-    volumes:
-      - ./data-3:/opt/bitnami/etcd/data
-      - ./certs:/opt/bitnami/etcd/certs:ro
-    networks:
-      - synp-network
+x-etcd-common: &etcd-common
+  image: quay.io/coreos/etcd:v3.6.8
+  restart: unless-stopped
+  networks:
+    - jrmarcco_net
+  environment: &etcd-common-env
+    ETCD_DATA_DIR: /etcd-data
+    ETCD_LISTEN_CLIENT_URLS: https://0.0.0.0:2379
+    ETCD_CERT_FILE: /etcd-certs/server.pem
+    ETCD_KEY_FILE: /etcd-certs/server-key.pem
+    ETCD_TRUSTED_CA_FILE: /etcd-certs/ca.pem
+    ETCD_CLIENT_CERT_AUTH: "true"
+    ETCD_LISTEN_PEER_URLS: https://0.0.0.0:2380
+    ETCD_PEER_CERT_FILE: /etcd-certs/server.pem
+    ETCD_PEER_KEY_FILE: /etcd-certs/server-key.pem
+    ETCD_PEER_TRUSTED_CA_FILE: /etcd-certs/ca.pem
+    ETCD_PEER_CLIENT_CERT_AUTH: "true"
+    ETCD_INITIAL_CLUSTER_TOKEN: synp-etcd-cluster
+    ETCD_INITIAL_CLUSTER: etcd-1=https://node-1:2380,etcd-2=https://node-2:2380,etcd-3=https://node-3:2380
+    ETCD_INITIAL_CLUSTER_STATE: new
+    ETCD_CIPHER_SUITES: TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    ETCD_TLS_MIN_VERSION: TLS1.2
 
 networks:
-  synp-network:
-    driver: bridge
+  jrmarcco_net:
+    external: true
+
+services:
+  node-1:
+    <<: *etcd-common
+    environment:
+      <<: *etcd-common-env
+      ETCD_NAME: etcd-1
+      ETCD_ADVERTISE_CLIENT_URLS: https://node-1:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: https://node-1:2380
+    ports:
+      - "12379:2379"  # Client port ( HTTPS only )
+      - "12380:2380"  # Peer port ( HTTPS only )
+    volumes:
+      - ./data-1:/etcd-data
+      - ./certs:/etcd-certs:ro
+
+  node-2:
+    <<: *etcd-common
+    environment:
+      <<: *etcd-common-env
+      ETCD_NAME: etcd-2
+      ETCD_ADVERTISE_CLIENT_URLS: https://node-2:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: https://node-2:2380
+    ports:
+      - "22379:2379"  # Client port ( HTTPS only )
+      - "22380:2380"  # Peer port ( HTTPS only )
+    volumes:
+      - ./data-2:/etcd-data
+      - ./certs:/etcd-certs:ro
+
+  node-3:
+    <<: *etcd-common
+    environment:
+      <<: *etcd-common-env
+      ETCD_NAME: etcd-3
+      ETCD_ADVERTISE_CLIENT_URLS: https://node-3:2379
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: https://node-3:2380
+    ports:
+      - "32379:2379"  # Client port ( HTTPS only )
+      - "32380:2380"  # Peer port ( HTTPS only )
+    volumes:
+      - ./data-3:/etcd-data
+      - ./certs:/etcd-certs:ro
+
+# ================================ 初始化用户 ================================= #
+
+# 添加 root 角色 ( root 角色为 etcd 的特殊角色 - 超级管理员语义 )
+# ./etcdctl.sh role-add root
+
+# 添加 root 用户并授权
+# ./etcdctl.sh user-add root
+# ./etcdctl.sh user grant-role root root
+
+# 添加业务用户和角色
+# ./etcdctl.sh user-add app-user
+# ./etcdctl.sh role-add app-role-rw
+
+# 授权业务用户访问特定前缀的键
+# ./etcdctl.sh role grant-permission --prefix=true app-role-rw readwrite app/
+# ./etcdctl.sh user grant-role app-role-rw app-user
+
+# ================================ 初始化用户 ================================= #

@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -e
 
 echo "=== 生成 etcd 3 节点集群 Ed25519 TLS 证书 ( 仅 DNS 配置 )==="
@@ -13,14 +14,14 @@ cd $CERT_DIR
 # 清理旧证书
 rm -f *.pem *.csr *.srl *.conf
 
-echo "1. 生成 CA 私钥 (Ed25519)"
+echo "1. 生成 CA 私钥 ( Ed25519 )"
 openssl genpkey -algorithm Ed25519 -out ca-key.pem
 
 echo "2. 生成 CA 证书"
 openssl req -new -x509 -key ca-key.pem -days "$VALIDITY_DAYS" -out ca.pem \
     -subj "/C=CN/ST=Beijing/L=Beijing/O=Synp/OU=CA/CN=etcd-ca"
 
-echo "3. 生成 etcd 服务器私钥 (Ed25519)"
+echo "3. 生成 etcd 服务器私钥 ( Ed25519 )"
 openssl genpkey -algorithm Ed25519 -out server-key.pem
 
 echo "4. 创建服务器证书配置文件（仅 DNS 名称）"
@@ -45,7 +46,7 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-# ===== 本地回环（保留 localhost 用于测试）=====
+# ===== 本地回环 ( 保留 localhost 用于测试 ) =====
 DNS.1 = localhost
 IP.1 = 127.0.0.1
 IP.2 = ::1
@@ -68,7 +69,7 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem \
     -CAcreateserial -out server.pem -days "$VALIDITY_DAYS" \
     -extensions v3_req -extfile server.conf
 
-echo "7. 生成 etcd 客户端私钥 (Ed25519)"
+echo "7. 生成 etcd 客户端私钥 ( Ed25519 )"
 openssl genpkey -algorithm Ed25519 -out client-key.pem
 
 echo "8. 创建客户端证书配置文件"
