@@ -75,7 +75,7 @@ func loadConfig() error {
 	}
 
 	// 合并其他配置文件。
-	subConfigNames := []string{"redis", "kafka"}
+	subConfigNames := []string{"redis", "kafka", "etcd"}
 	for _, subConfigName := range subConfigNames {
 		viper.SetConfigName(subConfigName)
 		if err := viper.MergeInConfig(); err != nil {

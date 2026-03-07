@@ -15,13 +15,14 @@ import (
 
 func newEtcdClient(logger *zap.Logger, lifecycle fx.Lifecycle) (*clientv3.Client, error) {
 	type tlsConfig struct {
-		Enabled bool   `mapstructure:"enabled"`
-		CertPem string `mapstructure:"cert_pem"`
-		CertKey string `mapstructure:"cert_key"`
-		CaCert  string `mapstructure:"ca_cert"`
+		Enabled bool `mapstructure:"enabled"`
 
 		ServerName         string `mapstructure:"server_name"`
 		InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"`
+
+		CertPem string `mapstructure:"cert_pem"`
+		CertKey string `mapstructure:"cert_key"`
+		CaCert  string `mapstructure:"ca_cert"`
 	}
 
 	type config struct {

@@ -209,7 +209,7 @@ case "$1" in
             echo "用法: $0 del <key>"
             exit 1
         fi
-        echo "🗑️ 删除键值: $2"
+        echo "🚮 删除键值: $2"
         $ETCDCTL_CMD del "$2"
         echo "✅ 键值删除成功"
         ;;
@@ -219,7 +219,7 @@ case "$1" in
             echo "用法: $0 del-prefix <prefix>"
             exit 1
         fi
-        echo "🗑️ 删除前缀为 '$2' 的所有键值..."
+        echo "🚮 删除前缀为 '$2' 的所有键值..."
         echo "⚠️  警告: 这将删除所有匹配的键值，请确认 (y/N): "
         read -r confirm
         if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
@@ -388,7 +388,7 @@ case "$1" in
             echo "用法: $0 user-delete <username>"
             exit 1
         fi
-        echo "🗑️ 删除用户: $2"
+        echo "🚮 删除用户: $2"
         $ETCDCTL_CMD user delete "$2"
         echo "✅ 用户删除成功"
         ;;
@@ -421,7 +421,7 @@ case "$1" in
             echo "用法: $0 role-delete <rolename>"
             exit 1
         fi
-        echo "🗑️ 删除角色: $2"
+        echo "🚮 删除角色: $2"
         $ETCDCTL_CMD role delete "$2"
         echo "✅ 角色删除成功"
         ;;
