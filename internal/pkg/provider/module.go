@@ -12,10 +12,12 @@ import (
 
 var (
 	ZapLoggerFxModule       = fx.Module("zap-logger", fx.Provide(newLogger))
+	EtcdFxModule            = fx.Module("etcd", fx.Provide(newEtcdClient))
 	RedisFxModule           = fx.Module("redis", fx.Provide(newRedisCmdable))
 	CodecFxModule           = fx.Module("codec", fx.Provide(newCodec))
 	MessagePushFuncFxModule = fx.Module("message-push-func", fx.Provide(message.DefaultPushFunc))
 	RetransmitFxModule      = fx.Module("retransmit", fx.Provide(newRetransmitManager))
+	GrpcRegistryFxModule    = fx.Module("grpc-registry", fx.Provide(newGrpcRegistry))
 )
 
 var (

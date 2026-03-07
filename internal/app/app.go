@@ -10,15 +10,10 @@ import (
 	"time"
 
 	"github.com/jrmarcco/synp"
-	"github.com/jrmarcco/synp/internal/ws"
-	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"github.com/jrmarcco/xgrpc/register"
-	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
-
-var AppFxModule = fx.Module("app", fx.Invoke(initApp))
 
 type app struct {
 	mu sync.Mutex
@@ -190,41 +185,4 @@ func isExpectedGRPCServeErr(err error) bool {
 	}
 	// grpc 服务停止时，底层 listener 关闭会返回这一类错误。
 	return strings.Contains(err.Error(), "use of closed network connection")
-}
-
-type appFxParams struct {
-	fx.In
-
-	Upgrader    synp.Upgrader
-	ConnManager synp.ConnManager
-	ConnHandler synp.Handler
-
-	Consumers map[string]*gateway.Consumer
-
-	Logger    *zap.Logger
-	Lifecycle fx.Lifecycle
-}
-
-func initApp(params appFxParams) *app {
-	webSocketConfig := ws.DefaultConfig()
-	webSocketServer := ws.NewServer(
-		webSocketConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
-	)
-
-	app := &app{
-		webSocketServer: webSocketServer,
-
-		logger: params.Logger,
-	}
-
-	params.Lifecycle.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return app.Start(ctx)
-		},
-		OnStop: func(ctx context.Context) error {
-			return app.Stop(ctx)
-		},
-	})
-
-	return app
 }

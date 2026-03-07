@@ -4,8 +4,8 @@ services:
     image: bitnami/etcd:latest
     restart: unless-stopped
     ports:
-      - "42379:2379"  # Client port (HTTPS only)
-      - "42380:2380"  # Peer port (HTTPS only)
+      - "42379:2379"  # Client port ( HTTPS only )
+      - "42380:2380"  # Peer port ( HTTPS only )
     environment:
       # Basic settings
       - ALLOW_NONE_AUTHENTICATION=no
@@ -19,7 +19,7 @@ services:
       - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_CLIENT_CERT_AUTH=true
       - ETCD_AUTO_TLS=false
-      # 只监听 HTTPS 端口，禁用 HTTP
+      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
       - ETCD_ADVERTISE_CLIENT_URLS=https://node-1:2379
       # ===== 强制 TLS 对等连接配置 =====
@@ -28,7 +28,7 @@ services:
       - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_PEER_CLIENT_CERT_AUTH=true
       - ETCD_PEER_AUTO_TLS=false
-      # 只监听 HTTPS 对等端口，禁用 HTTP
+      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-1:2380
       # ===== 集群配置 =====
@@ -48,8 +48,8 @@ services:
     image: bitnami/etcd:latest
     restart: unless-stopped
     ports:
-      - "42381:2379"  # Client port (HTTPS only)
-      - "42382:2380"  # Peer port (HTTPS only)
+      - "42381:2379"  # Client port ( HTTPS only )
+      - "42382:2380"  # Peer port ( HTTPS only )
     environment:
       # Basic settings
       - ALLOW_NONE_AUTHENTICATION=no
@@ -63,7 +63,7 @@ services:
       - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_CLIENT_CERT_AUTH=true
       - ETCD_AUTO_TLS=false
-      # 只监听 HTTPS 端口，禁用 HTTP
+      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
       - ETCD_ADVERTISE_CLIENT_URLS=https://node-2:2379
       # ===== 强制 TLS 对等连接配置 =====
@@ -72,7 +72,7 @@ services:
       - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_PEER_CLIENT_CERT_AUTH=true
       - ETCD_PEER_AUTO_TLS=false
-      # 只监听 HTTPS 对等端口，禁用 HTTP
+      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-2:2380
       # ===== 集群配置 =====
@@ -92,8 +92,8 @@ services:
     image: bitnami/etcd:latest
     restart: unless-stopped
     ports:
-      - "42383:2379"  # Client port (HTTPS only)
-      - "42384:2380"  # Peer port (HTTPS only)
+      - "42383:2379"  # Client port ( HTTPS only )
+      - "42384:2380"  # Peer port ( HTTPS only )
     environment:
       # Basic settings
       - ALLOW_NONE_AUTHENTICATION=no
@@ -107,7 +107,7 @@ services:
       - ETCD_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_CLIENT_CERT_AUTH=true
       - ETCD_AUTO_TLS=false
-      # 只监听 HTTPS 端口，禁用 HTTP
+      # ===== CLient 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_CLIENT_URLS=https://0.0.0.0:2379
       - ETCD_ADVERTISE_CLIENT_URLS=https://node-3:2379
       # ===== 强制 TLS 对等连接配置 =====
@@ -116,7 +116,7 @@ services:
       - ETCD_PEER_TRUSTED_CA_FILE=/opt/bitnami/etcd/certs/ca.pem
       - ETCD_PEER_CLIENT_CERT_AUTH=true
       - ETCD_PEER_AUTO_TLS=false
-      # 只监听 HTTPS 对等端口，禁用 HTTP
+      # ===== Peer 监听 HTTPS 端口 ( 禁用 HTTP ) =====
       - ETCD_LISTEN_PEER_URLS=https://0.0.0.0:2380
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=https://node-3:2380
       # ===== 集群配置 =====
