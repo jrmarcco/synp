@@ -1,0 +1,4 @@
+grpc:
+  registry:
+    key_prefix: "synp/grpc"
+    lease_ttl: 10s

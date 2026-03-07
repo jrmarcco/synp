@@ -3,8 +3,8 @@ etcd:
     - 192.168.3.3:12379
     - 192.168.3.3:22379
     - 192.168.3.3:32379
-  username: synp
-  password: <synp_passwd>
+  username: root
+  password: <root_passwd>
   dial_timeout: 10s
   tls:
     enabled: true

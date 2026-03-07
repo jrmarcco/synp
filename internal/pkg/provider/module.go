@@ -7,6 +7,7 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
+	"github.com/jrmarcco/xgrpc/register"
 	"go.uber.org/fx"
 )
 
@@ -17,7 +18,16 @@ var (
 	CodecFxModule           = fx.Module("codec", fx.Provide(newCodec))
 	MessagePushFuncFxModule = fx.Module("message-push-func", fx.Provide(message.DefaultPushFunc))
 	RetransmitFxModule      = fx.Module("retransmit", fx.Provide(newRetransmitManager))
-	GrpcRegistryFxModule    = fx.Module("grpc-registry", fx.Provide(newGrpcRegistry))
+)
+
+var GrpcRegistryFxModule = fx.Module(
+	"grpc-registry",
+	fx.Provide(
+		fx.Annotate(
+			newGrpcRegistry,
+			fx.As(new(register.Registry)),
+		),
+	),
 )
 
 var (

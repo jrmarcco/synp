@@ -6,14 +6,19 @@ import (
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"github.com/jrmarcco/xgrpc/register"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 )
 
 var AppFxModule = fx.Module("app", fx.Invoke(startApp))
 
 type appFxParams struct {
 	fx.In
+
+	GrpcServer   *grpc.Server
+	GrpcRegistry register.Registry
 
 	Upgrader    synp.Upgrader
 	ConnManager synp.ConnManager
@@ -33,6 +38,9 @@ func startApp(params appFxParams) (*app, error) {
 
 	app := &app{
 		webSocketServer: webSocketServer,
+
+		grpcServer:   params.GrpcServer,
+		grpcRegistry: params.GrpcRegistry,
 
 		logger: params.Logger,
 	}

@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 
+	"github.com/jrmarcco/synp/internal/api"
 	"github.com/jrmarcco/synp/internal/app"
 	"github.com/jrmarcco/synp/internal/pkg/provider"
+	"github.com/jrmarcco/synp/internal/service"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/conn/lifecycle"
@@ -26,6 +28,9 @@ func main() {
 
 		// 初始化 zap.Logger。
 		provider.ZapLoggerFxModule,
+
+		// 初始化 etcd。
+		provider.EtcdFxModule,
 
 		// 初始化 redis.Cmdable。
 		provider.RedisFxModule,
@@ -59,6 +64,15 @@ func main() {
 		// 初始化 conn。
 		conn.ConnFxModule,
 
+		// 初始化 service。
+		service.ServiceFxModule,
+
+		// 初始化 grpc registry。
+		provider.GrpcRegistryFxModule,
+
+		// 初始化 grpc api。
+		api.GrpcApiFxModule,
+
 		// 初始化 app。
 		app.AppFxModule,
 	).Run()
@@ -75,7 +89,7 @@ func loadConfig() error {
 	}
 
 	// 合并其他配置文件。
-	subConfigNames := []string{"redis", "kafka", "etcd"}
+	subConfigNames := []string{"redis", "etcd", "kafka", "grpc"}
 	for _, subConfigName := range subConfigNames {
 		viper.SetConfigName(subConfigName)
 		if err := viper.MergeInConfig(); err != nil {

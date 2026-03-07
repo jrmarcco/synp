@@ -49,13 +49,13 @@ func (app *app) Start(ctx context.Context) (err error) {
 			}
 		}
 		if grpcStarted {
-			if stopErr := app.stopGRPC(); stopErr != nil {
+			if stopErr := app.stopGrpc(); stopErr != nil {
 				app.logger.Warn("[app] failed to rollback grpc server", zap.Error(stopErr))
 			}
 		}
 	}()
 
-	if err := app.startGRPC(ctx); err != nil {
+	if err := app.startGrpc(ctx); err != nil {
 		return err
 	}
 	grpcStarted = true
@@ -83,7 +83,7 @@ func (app *app) Stop(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("[app] failed to unregister grpc service: %w", err))
 	}
 
-	if err := app.stopGRPC(); err != nil {
+	if err := app.stopGrpc(); err != nil {
 		errs = append(errs, fmt.Errorf("[app] failed to stop grpc server: %w", err))
 	}
 
@@ -93,7 +93,7 @@ func (app *app) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (app *app) startGRPC(ctx context.Context) error {
+func (app *app) startGrpc(ctx context.Context) error {
 	if app.grpcServer == nil {
 		return errors.New("[app] grpc server is nil")
 	}
@@ -118,7 +118,7 @@ func (app *app) startGRPC(ctx context.Context) error {
 	return nil
 }
 
-func (app *app) stopGRPC() error {
+func (app *app) stopGrpc() error {
 	if app.grpcServer == nil {
 		return nil
 	}
