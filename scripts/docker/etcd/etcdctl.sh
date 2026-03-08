@@ -1,5 +1,5 @@
-#!/bin/bash
-# scripts/etcdctl.sh
+#!/usr/bin/env bash
+set -euo pipefail
 
 # ================ ↓ 连接参数 ↓ ================ #
 ETCD_ENDPOINTS="192.168.3.3:12379,192.168.3.3:22379,192.168.3.3:32379"

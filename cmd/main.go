@@ -67,9 +67,6 @@ func main() {
 		// 初始化 service。
 		service.ServiceFxModule,
 
-		// 初始化 grpc registry。
-		provider.GrpcRegistryFxModule,
-
 		// 初始化 grpc api。
 		api.GrpcApiFxModule,
 

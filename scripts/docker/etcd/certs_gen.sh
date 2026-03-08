@@ -1,6 +1,5 @@
-#!/bin/bash
-
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 echo "=== 生成 etcd 3 节点集群 Ed25519 TLS 证书 ( 仅 DNS 配置 )==="
 

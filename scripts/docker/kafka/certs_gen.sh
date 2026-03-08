@@ -1,5 +1,5 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 CERTS_DIR="./certs"
 PASSWORD="kafka-secret"
