@@ -1,5 +1,0 @@
-grpc:
-  registry:
-    service_name: synp-node-1
-    key_prefix: synp
-    lease_ttl: 10s

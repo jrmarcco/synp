@@ -14,11 +14,11 @@ var GrpcApiFxModule = fx.Module(
 	),
 )
 
+// newGrpcServer 创建 gRPC 服务器。
 func newGrpcServer(pushServer *GrpcPushServer) *grpc.Server {
 	grpcServer := grpc.NewServer()
 
 	// 注册 message service。
 	messagev1.RegisterPushServiceServer(grpcServer, pushServer)
-
 	return grpcServer
 }

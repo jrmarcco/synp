@@ -28,11 +28,8 @@ func newEtcdClient(logger *zap.Logger, lifecycle fx.Lifecycle) (*clientv3.Client
 	type config struct {
 		Endpoints []string `mapstructure:"endpoints"`
 
-		Username string `mapstructure:"username"`
-		Password string `mapstructure:"password"`
-
-		TestKey string `mapstructure:"test_key"`
-
+		Username    string        `mapstructure:"username"`
+		Password    string        `mapstructure:"password"`
 		DialTimeout time.Duration `mapstructure:"dial_timeout"`
 
 		TLS tlsConfig `mapstructure:"tls"`
@@ -85,7 +82,7 @@ func newEtcdClient(logger *zap.Logger, lifecycle fx.Lifecycle) (*clientv3.Client
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DialTimeout)
 	defer cancel()
 
-	if _, err := etcdClient.Get(ctx, cfg.TestKey); err != nil {
+	if _, err := etcdClient.Get(ctx, "/synp/test"); err != nil {
 		defer func() {
 			_ = etcdClient.Close()
 		}()

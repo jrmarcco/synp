@@ -4,8 +4,7 @@ etcd:
     - 192.168.3.3:22379
     - 192.168.3.3:32379
   username: synp
-  password: <synp_passwd>
-  test_key: synp/test-key
+  password: <passwd>
   dial_timeout: 10s
   tls:
     enabled: true

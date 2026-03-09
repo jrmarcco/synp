@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"github.com/jrmarcco/xgrpc/register"
 	"github.com/jrmarcco/xgrpc/register/etcd"
+	"github.com/spf13/viper"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -34,13 +37,36 @@ type appFxParams struct {
 }
 
 func startApp(params appFxParams) (*app, error) {
-	// 配置 grpc server。
+	type registryConfig struct {
+		KeyPrefix string        `mapstructure:"key_prefix"`
+		LeaseTTL  int           `mapstructure:"lease_ttl"`
+		Timeout   time.Duration `mapstructure:"timeout"`
+	}
+	type config struct {
+		Name  string `mapstructure:"name"`
+		Addr  string `mapstructure:"addr"`
+		Group string `mapstructure:"group"`
+
+		Registry registryConfig `mapstructure:"registry"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.grpc", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal grpc registry config: %w", err)
+	}
+
 	grpcRegistry, err := etcd.NewBuilder(params.EtcdClient).
-		// KeyPrefix("").
-		// LeaseTTL().
+		KeyPrefix(cfg.Registry.KeyPrefix).
+		LeaseTTL(cfg.Registry.LeaseTTL).
 		Build()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc registry: %w", err)
+	}
+
+	serviceInstance := register.ServiceInstance{
+		Name:  cfg.Name,
+		Addr:  cfg.Addr,
+		Group: cfg.Group,
 	}
 
 	// 配置 web socket server。
@@ -50,10 +76,13 @@ func startApp(params appFxParams) (*app, error) {
 	)
 
 	app := &app{
-		webSocketServer: webSocketServer,
+		grpcServer:          params.GrpcServer,
+		grpcServiceInstance: serviceInstance,
 
-		grpcServer:   params.GrpcServer,
-		grpcRegistry: grpcRegistry,
+		grpcRegistry:        grpcRegistry,
+		grpcRegisterTimeout: cfg.Registry.Timeout,
+
+		webSocketServer: webSocketServer,
 
 		logger: params.Logger,
 	}

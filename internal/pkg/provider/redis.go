@@ -13,7 +13,7 @@ import (
 func newRedisCmdable(logger *zap.Logger, lifecycle fx.Lifecycle) (redis.Cmdable, error) {
 	type config struct {
 		Addr     string `mapstructure:"addr"`
-		Password string `mapstructure:"password"` //nolint:gosec // Configuration field for Redis authentication
+		Password string `mapstructure:"password"`
 	}
 
 	cfg := config{}

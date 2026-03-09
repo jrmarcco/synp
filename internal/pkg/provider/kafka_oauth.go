@@ -87,7 +87,7 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 	const httpTimeout = 5 * time.Second
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Do(req) //nolint:gosec // OAuth endpoint is from trusted configuration
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send http request: %w", err)
 	}
@@ -106,7 +106,7 @@ func (m *KafkaOAuthMechanism) getAccessToken(ctx context.Context) (string, error
 
 	//nolint:tagliatelle // OAuth2 标准使用 snake_case
 	var tokenRes struct {
-		AccessToken string `json:"access_token"` //nolint:gosec // OAuth token response parsing
+		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
 		ExpiresIn   int    `json:"expires_in"`
 	}

@@ -134,6 +134,7 @@ func NewConn(
 	logger *zap.Logger,
 	opts ...option.Opt[Conn],
 ) *Conn {
+	//nolint:gosec // 创建整个 conn 生命周期的 context，cancel 在 Close 方法中调用。
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	c := &Conn{

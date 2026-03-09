@@ -20,8 +20,9 @@ type app struct {
 
 	grpcServer          *grpc.Server
 	grpcListener        net.Listener
-	grpcRegistry        register.Registry
 	grpcServiceInstance register.ServiceInstance
+
+	grpcRegistry        register.Registry
 	grpcRegisterTimeout time.Duration
 
 	webSocketServer synp.Server
@@ -44,7 +45,7 @@ func (app *app) Start(ctx context.Context) (err error) {
 			}
 		}
 		if grpcRegistered {
-			if unregisterErr := app.unregisterGRPC(ctx); unregisterErr != nil {
+			if unregisterErr := app.unregisterGrpc(ctx); unregisterErr != nil {
 				app.logger.Warn("[app] failed to rollback grpc registration", zap.Error(unregisterErr))
 			}
 		}
@@ -60,7 +61,7 @@ func (app *app) Start(ctx context.Context) (err error) {
 	}
 	grpcStarted = true
 
-	if err := app.registerGRPC(ctx); err != nil {
+	if err := app.registerGrpc(ctx); err != nil {
 		return err
 	}
 	grpcRegistered = true
@@ -79,7 +80,7 @@ func (app *app) Stop(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("[app] failed to stop ws server: %w", err))
 	}
 
-	if err := app.unregisterGRPC(ctx); err != nil {
+	if err := app.unregisterGrpc(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("[app] failed to unregister grpc service: %w", err))
 	}
 
@@ -137,7 +138,7 @@ func (app *app) stopGrpc() error {
 	return nil
 }
 
-func (app *app) registerGRPC(ctx context.Context) error {
+func (app *app) registerGrpc(ctx context.Context) error {
 	if app.grpcRegistry == nil {
 		return nil
 	}
@@ -153,7 +154,7 @@ func (app *app) registerGRPC(ctx context.Context) error {
 	return nil
 }
 
-func (app *app) unregisterGRPC(ctx context.Context) error {
+func (app *app) unregisterGrpc(ctx context.Context) error {
 	if app.grpcRegistry == nil {
 		return nil
 	}
@@ -176,6 +177,7 @@ func withOptionalTimeout(ctx context.Context, timeout time.Duration) (context.Co
 	if timeout <= 0 {
 		return ctx, func() {}
 	}
+	//nolint:gosec // 封装 context.WithTimeout 方法用以检查 timeout 参数，cancel 需要在外部调用。
 	return context.WithTimeout(ctx, timeout)
 }
 

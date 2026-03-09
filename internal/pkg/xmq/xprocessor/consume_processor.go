@@ -90,8 +90,7 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 			return err
 		}
 		// 为每个主题启动一个 goroutine 来消费消息。
-		//
-		//nolint:contextcheck // consume 内部使用长生命周期的 p.ctx 无需传递 Start 方法的 ctx 参数
+		//nolint:gosec,contextcheck // consume 内调用的Handler 是独立逻辑单元，使用 context.Background() 作为超时基础上下文。
 		go p.consume(msgChan)
 	}
 
