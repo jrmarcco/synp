@@ -62,7 +62,6 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 		slog.Error(
 			"[frontend-msg-handler] failed to marshal ack payload",
 			"conn_id", conn.ID(),
-			"ack_payload", ackPayload.String(),
 			"error", err,
 		)
 		return fmt.Errorf("failed to marshal ack payload: %w", err)

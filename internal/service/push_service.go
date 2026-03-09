@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
@@ -12,6 +12,8 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"go.uber.org/zap"
 )
+
+var ErrUserNotOnline = errors.New("user not online")
 
 type PushService interface {
 	Push(ctx context.Context, msg *messagev1.PushMessage, needRetry bool) error
@@ -47,7 +49,7 @@ func (s *DefaultPushService) Push(_ context.Context, msg *messagev1.PushMessage,
 			zap.Uint64("uid", msg.ReceiverId),
 			zap.String("message_id", msg.MessageId),
 		)
-		return fmt.Errorf("user not online")
+		return ErrUserNotOnline
 	}
 
 	downstreamMsg := &messagev1.Message{
