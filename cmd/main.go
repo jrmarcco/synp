@@ -10,6 +10,7 @@ import (
 	"github.com/jrmarcco/synp/internal/ws"
 	"github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/conn/lifecycle"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
@@ -76,7 +77,10 @@ func main() {
 }
 
 func loadConfig() error {
-	viper.AddConfigPath("etc")
+	configPath := pflag.String("config-dir", "etc", "config directory")
+	pflag.Parse()
+
+	viper.AddConfigPath(*configPath)
 	viper.SetConfigType("yaml")
 
 	// 读取基础配置。
