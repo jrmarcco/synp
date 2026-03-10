@@ -106,6 +106,7 @@ REQUEST_ID="$(generate_request_id)"
 #       注意:
 #           websocat 工具的 permessage-deflate 兼容性存在问题
 #           需要稳定测试推荐使用无压缩连接
+#           ( permessage-deflate 是 WebSocket 协议中的一个扩展，用于在 WebSocket 连接中启用数据压缩，以提高传输效率和降低带宽使用。 )
 WS_HEADERS=(
   --header "Authorization: Bearer ${ACCESS_TOKEN}"
   --header "X-Request-Id: ${REQUEST_ID}"
