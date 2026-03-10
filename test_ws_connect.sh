@@ -92,17 +92,20 @@ REQUEST_ID="$(generate_request_id)"
 
 # 客户端推荐连接参数：
 # 	- 无压缩：
-#		websocat -v \
+#       websocat -v \
 # 		  "wss://gateway.example.com/ws?device=pc" \
 #   	  --header "Authorization: Bearer <JWT>" \
 #   	  --header "X-Request-Id: $(uuidgen)"
 #
 #  - 启用压缩：
-# websocat -v \
-#   	"wss://gateway.example.com/ws?device=pc" \
+#       websocat -v \
+#   	  "wss://gateway.example.com/ws?device=pc" \
 #   	  --header "Authorization: Bearer <JWT>" \
 #   	  --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15" \
 #   	  --header "X-Request-Id: $(uuidgen)"
+#       注意:
+#           websocat 工具的 permessage-deflate 兼容性存在问题
+#           需要稳定测试推荐使用无压缩连接
 WS_HEADERS=(
   --header "Authorization: Bearer ${ACCESS_TOKEN}"
   --header "X-Request-Id: ${REQUEST_ID}"
