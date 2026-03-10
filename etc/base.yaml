@@ -7,7 +7,7 @@ synp:
   # WebSocket 配置
   websocket:
     host: 0.0.0.0
-    port: 10071
+    port: 10070
     compression:
       enabled: true
       # 服务端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB

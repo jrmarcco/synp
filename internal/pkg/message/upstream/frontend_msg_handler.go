@@ -75,22 +75,13 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 }
 
 // forwardToBackend 转发消息到业务服务端。
-// 通信方式为推送消息到 kafka，由业务服务端订阅并处理。
+// 通信方式为推送消息到 kafka 由业务服务端订阅并处理。
 func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
-	val, err := protojson.Marshal(msg)
-	if err != nil {
-		slog.Error(
-			"[frontend-msg-handler] failed to marshal message",
-			"message", msg.String(),
-			"error", err,
-		)
-		return fmt.Errorf("failed to marshal message: %w", err)
-	}
-
+	// 只需要转发 Body ( 消息体 )。
 	mqMsg := &xmq.Message{
 		Topic: h.topic,
 		Key:   []byte(msg.GetMessageId()),
-		Val:   val,
+		Val:   msg.GetBody(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.onReceiveTimeout)
