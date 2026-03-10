@@ -89,6 +89,7 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	s.logger.Info("[server] ws server started", zap.String("addr", s.config.Address()))
 	s.listener = ln
 
 	go s.acceptConn()
@@ -131,6 +132,8 @@ func (s *Server) Start() error {
 // acceptConn 接收 WebSocket 连接。
 func (s *Server) acceptConn() {
 	for {
+		s.logger.Debug("[server] accepting new connection")
+
 		// 判断是否接收新连接。
 		if !s.acceptNewConn.Load() {
 			s.logger.Info("[server] server is not accepting new connections")
@@ -157,10 +160,7 @@ func (s *Server) acceptConn() {
 			// 接收连接失败，归还令牌。
 			s.connLimiter.Release()
 
-			s.logger.Error(
-				"[server] failed to accept connection",
-				zap.Error(err),
-			)
+			s.logger.Error("[server] failed to accept connection", zap.Error(err))
 			if errors.Is(err, net.ErrClosed) {
 				// net.ErrClosed 表示 listener 已关闭，此时可以退出。
 				return
@@ -191,10 +191,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer func() {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
-			s.logger.Warn(
-				"[server] failed to close connection",
-				zap.Error(err),
-			)
+			s.logger.Warn("[server] failed to close connection", zap.Error(err))
 		}
 	}()
 
@@ -212,10 +209,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	// 注意这里的连接指的是 synp.Conn 而不是 net.Conn 接口。
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
-		s.logger.Error(
-			"[server] failed to create synp connection",
-			zap.Error(err),
-		)
+		s.logger.Error("[server] failed to create synp connection", zap.Error(err))
 		return
 	}
 
@@ -336,6 +330,7 @@ func (s *Server) consumeScaleUp(_ context.Context, _ *xmq.Message) error {
 }
 
 func (s *Server) Shutdown() error {
+	s.logger.Info("[server] shutting down ws server")
 	// 关闭限流器。
 	if err := s.connLimiter.Close(); err != nil {
 		s.logger.Error("[server] failed to close connection limiter", zap.Error(err))
@@ -343,12 +338,14 @@ func (s *Server) Shutdown() error {
 	}
 
 	s.cancelFunc()
+	s.logger.Info("[server] ws server shut down")
 	return nil
 }
 
 func (s *Server) GracefulShutdown() error {
-	s.acceptNewConn.Store(false)
+	s.logger.Info("[server] graceful shutting down ws server")
 
+	s.acceptNewConn.Store(false)
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
 			s.logger.Warn("[server] failed to close net listener", zap.Error(err))
