@@ -22,6 +22,7 @@ func newKafkaConsumers(factory xconsumer.ConsumerFactory, logger *zap.Logger) (m
 	return consumers, err
 }
 
+// TODO: 将废弃，改为 grpc 调用
 func pushMessageConsumer(factory xconsumer.ConsumerFactory, logger *zap.Logger) (*gateway.Consumer, error) {
 	type config struct {
 		Topic         string        `mapstructure:"topic"`

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jrmarcco/synp/internal/pkg/message"
@@ -11,23 +12,23 @@ import (
 	"github.com/spf13/viper"
 )
 
-func newFrontendMsgHandler(producer xproducer.Producer, pushFunc message.PushFunc) *upstream.FrontendMsgHandler {
+func newFrontendMsgHandler(producer xproducer.Producer, pushFunc message.PushFunc) (*upstream.FrontendMsgHandler, error) {
 	type config struct {
-		Topic            string `mapstructure:"topic"`
-		OnReceiveTimeout int    `mapstructure:"on_receive_timeout"`
+		Topic            string        `mapstructure:"topic"`
+		OnReceiveTimeout time.Duration `mapstructure:"on_receive_timeout"`
 	}
 
 	cfg := config{}
-	if err := viper.UnmarshalKey("synp.handler.message.frontend", &cfg); err != nil {
-		panic(err)
+	if err := viper.UnmarshalKey("synp.message_handler.frontend", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal frontend message handler config: %w", err)
 	}
 
 	return upstream.NewFrontendMsgHandler(
 		cfg.Topic,
-		time.Duration(cfg.OnReceiveTimeout)*time.Millisecond,
+		cfg.OnReceiveTimeout,
 		producer,
 		pushFunc,
-	)
+	), nil
 }
 
 func newBackendMsgHandler(pushFunc message.PushFunc, retransmitManager *retransmit.Manager) *downstream.BackendMsgHandler {

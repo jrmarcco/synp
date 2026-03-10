@@ -50,12 +50,18 @@ synp:
       receive_buffer_size: 256
       close_timeout: 1s
 
+  # 消息处理器配置
+  message_handler:
+    frontend:
+      topic: synp.message.upstream
+      on_receive_timeout: 3s
+
   # 网关事件消费者配置
   gateway:
     consumer:
       # downstream 消息消费者
       event_message_downstream:
-        topic: event.message.downstream
+        topic: synp.message.downstream
         group_id: synp-downstream-message-consumer
         partitions: 6
         handle_timeout: 16s
