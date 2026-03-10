@@ -56,14 +56,14 @@ func main() {
 		// 初始化 message handler。
 		provider.MessageHandlerFxModule,
 
-		// 初始化 upgrader。
-		ws.UpgraderFxModule,
-
 		// 初始化 conn lifecycle handler 。
 		lifecycle.ConnLifecycleFxModule,
 
 		// 初始化 conn。
 		conn.ConnFxModule,
+
+		// 初始化 upgrader。
+		ws.WsFxModule,
 
 		// 初始化 service。
 		service.ServiceFxModule,

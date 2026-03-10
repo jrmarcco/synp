@@ -132,7 +132,7 @@ func (s *Server) Start() error {
 // acceptConn 接收 WebSocket 连接。
 func (s *Server) acceptConn() {
 	for {
-		s.logger.Debug("[server] accepting new connection")
+		s.logger.Debug("[server] starting to accept new connection")
 
 		// 判断是否接收新连接。
 		if !s.acceptNewConn.Load() {

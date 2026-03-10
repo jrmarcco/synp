@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/jrmarcco/synp"
-	"github.com/jrmarcco/synp/internal/ws"
-	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"github.com/jrmarcco/xgrpc/register"
 	"github.com/jrmarcco/xgrpc/register/etcd"
 	"github.com/spf13/viper"
@@ -23,14 +21,9 @@ type appFxParams struct {
 	fx.In
 
 	EtcdClient *clientv3.Client
-
 	GrpcServer *grpc.Server
 
-	Upgrader    synp.Upgrader
-	ConnManager synp.ConnManager
-	ConnHandler synp.Handler
-
-	Consumers map[string]*gateway.Consumer
+	WebSocketServer synp.Server
 
 	Logger    *zap.Logger
 	Lifecycle fx.Lifecycle
@@ -69,12 +62,6 @@ func startApp(params appFxParams) (*app, error) {
 		Group: cfg.Group,
 	}
 
-	// 配置 web socket server。
-	webSocketConfig := ws.DefaultConfig()
-	webSocketServer := ws.NewServer(
-		webSocketConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
-	)
-
 	app := &app{
 		grpcServer:          params.GrpcServer,
 		grpcServiceInstance: serviceInstance,
@@ -82,7 +69,7 @@ func startApp(params appFxParams) (*app, error) {
 		grpcRegistry:        grpcRegistry,
 		grpcRegisterTimeout: cfg.Registry.Timeout,
 
-		webSocketServer: webSocketServer,
+		webSocketServer: params.WebSocketServer,
 
 		logger: params.Logger,
 	}

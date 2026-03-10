@@ -7,13 +7,13 @@ import (
 
 const (
 	defaultHost = "0.0.0.0"
-	defaultPort = 17001
+	defaultPort = 10071
 )
 
 // Config 为 WebSocket 的相关配置。
 type Config struct {
 	Host            string // IP 地址，默认 0.0.0.0
-	Port            int    // 端口号，默认 17001
+	Port            int    // 端口号，默认 10071
 	Network         string // 网络协议，默认 tcp4
 	EnableLocalMode bool   // 是自动获取 IP 地
 }

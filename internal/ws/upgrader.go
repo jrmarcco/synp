@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,10 +21,15 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	AuthorizationHeader = "authorization"
+	AuthorizationPrefix = "bearer"
+)
+
 var (
-	ErrTokenRequired = errors.New("token is required")
-	ErrInvalidURI    = errors.New("invalid uri")
-	ErrInvalidToken  = errors.New("invalid token")
+	ErrTokenRequired             = errors.New("token is required")
+	ErrInvalidToken              = errors.New("invalid token")
+	ErrInvalidAuthorizationToken = errors.New("invalid Authorization header token")
 )
 
 var _ synp.Upgrader = (*Upgrader)(nil)
@@ -54,23 +60,90 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 	var user session.User
 	var sess session.Session
 	var autoClose bool
+	var requestURI []byte
+	var authorization string
+	var clientRequestedCompression bool
 	upgrader := ws.Upgrader{
-		// 协商过程，这里主要是压缩相关的协商（是否启用以及压缩算法）。
-		Negotiate: func(opt httphead.Option) (httphead.Option, error) {
-			if ext != nil {
-				return ext.Negotiate(opt)
+		// 协商过程 ( 主要是协商是否启用压缩算法及压缩参数 )。
+		//
+		// 客户端推荐连接参数：
+		// 	- 无压缩：
+		//		websocat -v \
+		// 		  "wss://gateway.example.com/ws?device=pc" \
+		//   	  --header "Authorization: Bearer <JWT>" \
+		//   	  --header "X-Request-Id: $(uuidgen)"
+		//
+		//  - 启用压缩：
+		// websocat -v \
+		//   	"wss://gateway.example.com/ws?device=pc" \
+		//   	  --header "Authorization: Bearer <JWT>" \
+		//   	  --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15" \
+		//   	  --header "X-Request-Id: $(uuidgen)"
+		ExtensionCustom: func(value []byte, accepted []httphead.Option) ([]httphead.Option, bool) {
+			// 禁止空的 Sec-WebSocket-Extensions。
+			trimmed := bytes.TrimSpace(value)
+			if len(trimmed) == 0 {
+				u.logger.Warn("[upgrader] empty Sec-WebSocket-Extensions is forbidden")
+				return nil, false
 			}
-			return httphead.Option{}, nil
+			clientRequestedCompression = true
+
+			// 未启用压缩时忽略扩展协商结果。
+			if ext == nil {
+				return accepted, true
+			}
+
+			idx := -1
+			var current httphead.Option
+			var malformed bool
+
+			appendNegotiated := func(in httphead.Option) bool {
+				if in.Size() == 0 {
+					return true
+				}
+				opt, err := ext.Negotiate(in)
+				if err != nil {
+					malformed = true
+					return false
+				}
+				if opt.Size() > 0 {
+					accepted = append(accepted, opt)
+				}
+				return true
+			}
+
+			ok := httphead.ScanOptions(trimmed, func(i int, name, attr, val []byte) httphead.Control {
+				if i != idx {
+					if !appendNegotiated(current) {
+						return httphead.ControlBreak
+					}
+					idx = i
+					current = httphead.Option{Name: name}
+				}
+				if attr != nil {
+					current.Parameters.Set(attr, val)
+				}
+				return httphead.ControlContinue
+			})
+			if !ok || malformed {
+				return nil, false
+			}
+			if !appendNegotiated(current) {
+				return nil, false
+			}
+			return accepted, true
 		},
 		OnRequest: func(uri []byte) error {
-			// 验证 token 并提取用户信息。
-			var err error
-			if user, err = u.extractUserInfo(uri); err != nil {
-				return err
-			}
+			// 保存请求 URI，后续在 OnBeforeUpgrade 中解析 device。
+			requestURI = append(requestURI[:0], uri...)
 			return nil
 		},
 		OnHeader: func(key, value []byte) error {
+			// 解析 Authorization 头并提取 token。
+			if strings.EqualFold(string(key), AuthorizationHeader) {
+				authorization = string(value)
+			}
+
 			// 解析 auto close 参数。
 			if strings.EqualFold(string(key), "x-auto-close") {
 				autoClose = string(value) == "true"
@@ -84,6 +157,11 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 			return nil
 		},
 		OnBeforeUpgrade: func() (header ws.HandshakeHeader, err error) {
+			// 校验 token 并提取用户信息。
+			if user, err = u.extractUserInfo(requestURI, authorization); err != nil {
+				return nil, err
+			}
+
 			// 设置 auto close 参数。
 			user.AutoClose = autoClose
 
@@ -125,20 +203,26 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 			return sess, &state, nil
 		}
 
-		u.logger.Warn("[upgrader] failed to negotiate compression, downgrade to no compression")
+		// 客户端未请求压缩时，降级为无压缩是预期行为，不需要告警。
+		if clientRequestedCompression {
+			u.logger.Warn("[upgrader] failed to negotiate compression, downgrade to no compression")
+		}
 	}
 
 	return sess, &state, nil
 }
 
-// extractToken 从 URI 中提取 token。
-func (u *Upgrader) extractToken(uri []byte) (string, error) {
-	parsedURL, err := url.Parse(string(uri))
-	if err != nil {
-		return "", ErrInvalidURI
+// extractTokenFromHeader 从 Header 中提取 token。
+func (u *Upgrader) extractTokenFromHeader(authorization string) (string, error) {
+	parts := strings.Fields(authorization)
+	if len(parts) != 2 {
+		return "", ErrTokenRequired
 	}
 
-	token := parsedURL.Query().Get("token")
+	if !strings.EqualFold(parts[0], AuthorizationPrefix) {
+		return "", ErrInvalidAuthorizationToken
+	}
+	token := strings.TrimSpace(parts[1])
 	if token == "" {
 		return "", ErrTokenRequired
 	}
@@ -171,11 +255,11 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 	}
 }
 
-// getUserInfo 从 URI 中获取用户信息。
-func (u *Upgrader) extractUserInfo(uri []byte) (session.User, error) {
-	token, err := u.extractToken(uri)
+// getUserInfo 从 Header + URI 中获取用户信息。
+func (u *Upgrader) extractUserInfo(uri []byte, authorization string) (session.User, error) {
+	token, err := u.extractTokenFromHeader(authorization)
 	if err != nil {
-		u.logger.Error("[upgrader] failed to extract token from uri", zap.Error(err))
+		u.logger.Error("[upgrader] failed to extract token from authorization header", zap.Error(err))
 		return session.User{}, err
 	}
 
