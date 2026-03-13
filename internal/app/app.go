@@ -177,7 +177,6 @@ func withOptionalTimeout(ctx context.Context, timeout time.Duration) (context.Co
 	if timeout <= 0 {
 		return ctx, func() {}
 	}
-	//nolint:gosec // 封装 context.WithTimeout 方法用以检查 timeout 参数，cancel 需要在外部调用。
 	return context.WithTimeout(ctx, timeout)
 }
 
