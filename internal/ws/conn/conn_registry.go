@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultTTL       = time.Hour // 连接注册信息的过期时间 ( 防止网关crash后没清理 )
-	defaultKeyPrefix = "synp:conn_registry"
+	defaultKeyPrefix = "synp:conn:registry"
 )
 
 //go:embed lua/conn_register.lua

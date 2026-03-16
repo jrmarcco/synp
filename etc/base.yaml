@@ -2,8 +2,6 @@ profile:
   env: dev
 
 synp:
-  node_id: synp-node-default # 网关节点标识
-
   # WebSocket 配置
   websocket:
     host: 0.0.0.0
@@ -34,6 +32,13 @@ synp:
 
   # 连接配置
   conn:
+    # 连接注册表配置
+    registry:
+      ttl: 30m
+      # *** 网关节点标识 - 必须配置 ***
+      node: synp-node-default
+      key_prefix: synp:conn:registry
+
     # 连接生命周期处理器配置
     handler:
       cache_request_timeout: 10s

@@ -1,7 +1,6 @@
 package conn
 
 import (
-	"errors"
 	"time"
 
 	"github.com/jrmarcco/synp"
@@ -28,16 +27,22 @@ var ConnFxModule = fx.Module(
 )
 
 func newConnRegistry(rdb redis.Cmdable, logger *zap.Logger) (*ConnRegistry, error) {
-	var node string
-	if err := viper.UnmarshalKey("synp.node_id", &node); err != nil {
+	type config struct {
+		Node      string        `mapstructure:"node"`
+		KeyPrefix string        `mapstructure:"key_prefix"`
+		TTL       time.Duration `mapstructure:"ttl"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.conn.registry", &cfg); err != nil {
 		return nil, err
 	}
 
-	if node == "" {
-		return nil, errors.New("node_id is required in config")
-	}
-
-	return NewConnRegistry(rdb, node, logger), nil
+	return NewConnRegistry(
+		rdb, cfg.Node, logger,
+		ConnRegistryWithTTL(cfg.TTL),
+		ConnRegistryWithKeyPrefix(cfg.KeyPrefix),
+	), nil
 }
 
 func newConnManager(zapLogger *zap.Logger) (*ConnManager, error) {
