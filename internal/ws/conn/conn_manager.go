@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jrmarcco/jit/bean/option"
+	"github.com/jrmarcco/jit/xbean/option"
 	"github.com/jrmarcco/jit/xsync"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"

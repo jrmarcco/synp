@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jrmarcco/synp"
+	"github.com/jrmarcco/xgrpc/register"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
@@ -26,9 +27,8 @@ var ConnFxModule = fx.Module(
 	),
 )
 
-func newConnRegistry(rdb redis.Cmdable, logger *zap.Logger) (*ConnRegistry, error) {
+func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance, logger *zap.Logger) (*ConnRegistry, error) {
 	type config struct {
-		Node      string        `mapstructure:"node"`
 		KeyPrefix string        `mapstructure:"key_prefix"`
 		TTL       time.Duration `mapstructure:"ttl"`
 	}
@@ -39,7 +39,9 @@ func newConnRegistry(rdb redis.Cmdable, logger *zap.Logger) (*ConnRegistry, erro
 	}
 
 	return NewConnRegistry(
-		rdb, cfg.Node, logger,
+		rdb,
+		si.Addr,
+		logger,
 		ConnRegistryWithTTL(cfg.TTL),
 		ConnRegistryWithKeyPrefix(cfg.KeyPrefix),
 	), nil

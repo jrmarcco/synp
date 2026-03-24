@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/jrmarcco/jit/bean/option"
+	"github.com/jrmarcco/jit/xbean/option"
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/limiter"

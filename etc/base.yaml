@@ -18,7 +18,7 @@ synp:
       level: 6
 
   grpc:
-    name: synp-node-default
+    name: synp
     addr: 127.0.0.1:50051
     group: synp
     registry:
@@ -35,8 +35,6 @@ synp:
     # 连接注册表配置
     registry:
       ttl: 30m
-      # *** 网关节点标识 - 必须配置 ***
-      node: synp-node-default
       key_prefix: synp:conn:registry
 
     # 连接生命周期处理器配置

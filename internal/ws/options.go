@@ -1,7 +1,7 @@
 package ws
 
 import (
-	"github.com/jrmarcco/jit/bean/option"
+	"github.com/jrmarcco/jit/xbean/option"
 	"github.com/jrmarcco/synp/internal/pkg/limiter"
 )
 

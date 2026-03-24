@@ -9,8 +9,8 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/jrmarcco/jit/bean/option"
-	"github.com/jrmarcco/jit/retry"
+	"github.com/jrmarcco/jit/xbean/option"
+	"github.com/jrmarcco/jit/xretry"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/pkg/session"
@@ -274,7 +274,7 @@ func (c *Conn) sendLoop() {
 func (c *Conn) trySend(payload []byte) bool {
 	// 这里可以忽略 error。
 	// 创建 ws.Conn 的时候就应该确保重试策略的参数正确。
-	retryStrategy, _ := retry.NewExponentialBackoffStrategy(
+	retryStrategy, _ := xretry.NewExponentialBackoffStrategy(
 		c.initRetryInterval,
 		c.maxRetryInterval,
 		c.maxRetryCount,

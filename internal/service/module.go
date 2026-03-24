@@ -9,5 +9,10 @@ var ServiceFxModule = fx.Module(
 			NewDefaultPushService,
 			fx.As(new(PushService)),
 		),
+
+		fx.Annotate(
+			NewDefaultLocalService,
+			fx.As(new(LocalService)),
+		),
 	),
 )

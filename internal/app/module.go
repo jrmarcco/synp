@@ -15,13 +15,38 @@ import (
 	"google.golang.org/grpc"
 )
 
-var AppFxModule = fx.Module("app", fx.Invoke(startApp))
+var AppFxModule = fx.Module(
+	"app",
+	fx.Provide(newServiceInstance),
+	fx.Invoke(startApp),
+)
+
+func newServiceInstance() (register.ServiceInstance, error) {
+	type config struct {
+		Name  string `mapstructure:"name"`
+		Addr  string `mapstructure:"addr"`
+		Group string `mapstructure:"group"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.grpc", &cfg); err != nil {
+		return register.ServiceInstance{}, fmt.Errorf("failed to unmarshal grpc service instance config: %w", err)
+	}
+
+	return register.ServiceInstance{
+		Name:  cfg.Name,
+		Addr:  cfg.Addr,
+		Group: cfg.Group,
+	}, nil
+}
 
 type appFxParams struct {
 	fx.In
 
 	EtcdClient *clientv3.Client
-	GrpcServer *grpc.Server
+
+	GrpcServer          *grpc.Server
+	GrpcServiceInstance register.ServiceInstance
 
 	WebSocketServer synp.Server
 
@@ -29,45 +54,32 @@ type appFxParams struct {
 	Lifecycle fx.Lifecycle
 }
 
-func startApp(params appFxParams) (*app, error) {
-	type registryConfig struct {
+func startApp(params appFxParams) error {
+	type config struct {
 		KeyPrefix string        `mapstructure:"key_prefix"`
 		LeaseTTL  int           `mapstructure:"lease_ttl"`
 		Timeout   time.Duration `mapstructure:"timeout"`
 	}
-	type config struct {
-		Name  string `mapstructure:"name"`
-		Addr  string `mapstructure:"addr"`
-		Group string `mapstructure:"group"`
-
-		Registry registryConfig `mapstructure:"registry"`
-	}
 
 	cfg := config{}
-	if err := viper.UnmarshalKey("synp.grpc", &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal grpc registry config: %w", err)
+	if err := viper.UnmarshalKey("synp.grpc.registry", &cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal grpc registry config: %w", err)
 	}
 
 	grpcRegistry, err := etcd.NewBuilder(params.EtcdClient).
-		KeyPrefix(cfg.Registry.KeyPrefix).
-		LeaseTTL(cfg.Registry.LeaseTTL).
+		KeyPrefix(cfg.KeyPrefix).
+		LeaseTTL(cfg.LeaseTTL).
 		Build()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create grpc registry: %w", err)
-	}
-
-	serviceInstance := register.ServiceInstance{
-		Name:  cfg.Name,
-		Addr:  cfg.Addr,
-		Group: cfg.Group,
+		return fmt.Errorf("failed to create grpc registry: %w", err)
 	}
 
 	app := &app{
 		grpcServer:          params.GrpcServer,
-		grpcServiceInstance: serviceInstance,
+		grpcServiceInstance: params.GrpcServiceInstance,
 
 		grpcRegistry:        grpcRegistry,
-		grpcRegisterTimeout: cfg.Registry.Timeout,
+		grpcRegisterTimeout: cfg.Timeout,
 
 		webSocketServer: params.WebSocketServer,
 
@@ -82,6 +94,5 @@ func startApp(params appFxParams) (*app, error) {
 			return app.Stop(ctx)
 		},
 	})
-
-	return app, nil
+	return nil
 }

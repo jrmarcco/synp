@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/jit/bean/option"
+	"github.com/jrmarcco/jit/xbean/option"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/redis/go-redis/v9"
@@ -34,7 +34,6 @@ var (
 var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 
 // ConnRegistry 是连接注册表。
-//
 // 使用 Redis ZSET 存储用户连接所在网关节点及其过期时间（score）。
 //
 //	┌────────────────────────────────────┐
@@ -50,6 +49,8 @@ var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 type ConnRegistry struct {
 	rdb redis.Cmdable
 
+	// 网关节点标识。
+	// 这里使用 xgrpc 中 ServiceInstance 的 Addr 字段 ( 即通过 addr 直连网关节点 )。
 	node      string
 	ttl       time.Duration
 	keyPrefix string
@@ -87,6 +88,7 @@ func NewConnRegistry(rdb redis.Cmdable, node string, logger *zap.Logger, opts ..
 // Register 注册用户连接到当前网关节点。
 //
 // 使用 Redis ZSET 结构存储。
+//
 //   - key: key_prefix:{bid}:{uid}
 //   - member: node
 //   - score: 节点过期时间戳 ( unix ms )
@@ -99,6 +101,7 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 	expireAtMillis := time.Now().Add(r.ttl).UnixMilli()
 
 	// 原子执行 ZADD + PEXPIRE：
+	//
 	// - ZADD: 	  更新当前 node 的过期时间。
 	// - PEXPIRE: 兜底控制 key 生命周期，避免长期冷数据堆积。
 	res, err := connRegisterScript.Run(ctx, r.rdb, []string{key}, expireAtMillis, r.node, ttlMillis).Result()
