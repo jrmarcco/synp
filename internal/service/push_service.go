@@ -15,8 +15,17 @@ import (
 
 var ErrUserNotOnline = errors.New("user not online")
 
+type DownstreamMsg struct {
+	MessageID string
+
+	BizID      uint64
+	ReceiverID uint64
+
+	Body []byte
+}
+
 type PushService interface {
-	Push(ctx context.Context, msg *messagev1.PushMessage, needRetry bool) error
+	Push(ctx context.Context, msg *DownstreamMsg, needRetry bool) error
 }
 
 var _ PushService = (*DefaultPushService)(nil)
@@ -34,10 +43,10 @@ func NewDefaultPushService() *DefaultPushService {
 	return &DefaultPushService{}
 }
 
-func (s *DefaultPushService) Push(_ context.Context, msg *messagev1.PushMessage, needRetry bool) error {
+func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRetry bool) error {
 	user := session.User{
-		BID: msg.BizId,
-		UID: msg.ReceiverId,
+		BID: msg.BizID,
+		UID: msg.ReceiverID,
 	}
 
 	// 查找用户所有在线连接 ( 支持多设备 )。
@@ -45,16 +54,16 @@ func (s *DefaultPushService) Push(_ context.Context, msg *messagev1.PushMessage,
 	if !ok {
 		s.logger.Warn(
 			"[push-service] user not online",
-			zap.Uint64("bid", msg.BizId),
-			zap.Uint64("uid", msg.ReceiverId),
-			zap.String("message_id", msg.MessageId),
+			zap.Uint64("bid", msg.BizID),
+			zap.Uint64("uid", msg.ReceiverID),
+			zap.String("message_id", msg.MessageID),
 		)
 		return ErrUserNotOnline
 	}
 
 	downstreamMsg := &messagev1.Message{
 		Cmd:       commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
-		MessageId: msg.MessageId,
+		MessageId: msg.MessageID,
 		Body:      msg.Body,
 	}
 
@@ -64,7 +73,7 @@ func (s *DefaultPushService) Push(_ context.Context, msg *messagev1.PushMessage,
 			s.logger.Error(
 				"[push-service] failed to push message",
 				zap.String("conn_id", conn.ID()),
-				zap.String("message_id", msg.MessageId),
+				zap.String("message_id", msg.MessageID),
 				zap.Error(err),
 			)
 			pushErr = err

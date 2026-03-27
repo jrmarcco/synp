@@ -3,12 +3,15 @@ package conn
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jrmarcco/jit/xbean/option"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/session"
+	"github.com/jrmarcco/xgrpc/register"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -16,6 +19,7 @@ import (
 const (
 	defaultTTL       = time.Hour // 连接注册信息的过期时间 ( 防止网关crash后没清理 )
 	defaultKeyPrefix = "synp:conn:registry"
+	memberVersionV1  = "v1"
 )
 
 //go:embed lua/conn_register.lua
@@ -50,8 +54,8 @@ type ConnRegistry struct {
 	rdb redis.Cmdable
 
 	// 网关节点标识。
-	// 这里使用 xgrpc 中 ServiceInstance 的 Addr 字段 ( 即通过 addr 直连网关节点 )。
-	node      string
+	// xgrpc 的 ServiceInstance ( 包含服务名称、地址等信息 )。
+	si        register.ServiceInstance
 	ttl       time.Duration
 	keyPrefix string
 
@@ -70,11 +74,16 @@ func ConnRegistryWithKeyPrefix(keyPrefix string) option.Opt[ConnRegistry] {
 	}
 }
 
-func NewConnRegistry(rdb redis.Cmdable, node string, logger *zap.Logger, opts ...option.Opt[ConnRegistry]) *ConnRegistry {
+func NewConnRegistry(
+	rdb redis.Cmdable,
+	si register.ServiceInstance,
+	logger *zap.Logger,
+	opts ...option.Opt[ConnRegistry],
+) *ConnRegistry {
 	registry := &ConnRegistry{
 		rdb: rdb,
 
-		node:      node,
+		si:        si,
 		ttl:       defaultTTL,
 		keyPrefix: defaultKeyPrefix,
 
@@ -93,7 +102,6 @@ func NewConnRegistry(rdb redis.Cmdable, node string, logger *zap.Logger, opts ..
 //   - member: node
 //   - score: 节点过期时间戳 ( unix ms )
 func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
-	key := r.key(user.BID, user.UID)
 	ttlMillis := r.ttl.Milliseconds()
 	if ttlMillis <= 0 {
 		return fmt.Errorf("invalid ttl: %s", r.ttl)
@@ -104,12 +112,15 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 	//
 	// - ZADD: 	  更新当前 node 的过期时间。
 	// - PEXPIRE: 兜底控制 key 生命周期，避免长期冷数据堆积。
-	res, err := connRegisterScript.Run(ctx, r.rdb, []string{key}, expireAtMillis, r.node, ttlMillis).Result()
+	key := r.key(user.BID, user.UID)
+	member := encodeMember(r.si.Name, r.si.Addr)
+	res, err := connRegisterScript.Run(ctx, r.rdb, []string{key}, expireAtMillis, member, ttlMillis).Result()
 	if err != nil {
 		r.logger.Error(
 			"[conn-registry] failed to register connection",
 			zap.String("key", key),
-			zap.String("node", r.node),
+			zap.String("service_name", r.si.Name),
+			zap.String("service_addr", r.si.Addr),
 			zap.Error(err),
 		)
 		return fmt.Errorf("failed to register connection: %w", err)
@@ -129,11 +140,13 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User) error {
 // Unregister 注销用户连接。
 func (r *ConnRegistry) Unregister(ctx context.Context, user session.User) error {
 	key := r.key(user.BID, user.UID)
-	if err := r.rdb.ZRem(ctx, key, r.node).Err(); err != nil {
+	member := encodeMember(r.si.Name, r.si.Addr)
+	if err := r.rdb.ZRem(ctx, key, member).Err(); err != nil {
 		r.logger.Error(
 			"[conn-registry] failed to unregister connection",
 			zap.String("key", key),
-			zap.String("node", r.node),
+			zap.String("service_name", r.si.Name),
+			zap.String("service_addr", r.si.Addr),
 			zap.Error(err),
 		)
 		return fmt.Errorf("failed to unregister connection: %w", err)
@@ -142,7 +155,7 @@ func (r *ConnRegistry) Unregister(ctx context.Context, user session.User) error 
 }
 
 // FindNodes 查找用户所有连接所在的网关节点。
-func (r *ConnRegistry) FindNodes(ctx context.Context, bid, uid uint64) ([]string, error) {
+func (r *ConnRegistry) FindNodes(ctx context.Context, bid, uid uint64) ([]synp.ConnNode, error) {
 	key := r.key(bid, uid)
 	now := time.Now().UnixMilli()
 
@@ -165,7 +178,23 @@ func (r *ConnRegistry) FindNodes(ctx context.Context, bid, uid uint64) ([]string
 		return nil, fmt.Errorf("failed to find nodes: %w", err)
 	}
 
-	return members, nil
+	nodes := make([]synp.ConnNode, 0, len(members))
+	for _, member := range members {
+		name, addr, err := decodeMember(member)
+		if err != nil {
+			r.logger.Warn(
+				"[conn-registry] failed to decode member",
+				zap.String("member", member),
+				zap.Error(err),
+			)
+			continue
+		}
+		nodes = append(nodes, synp.ConnNode{
+			ServiceName: name,
+			ServiceAddr: addr,
+		})
+	}
+	return nodes, nil
 }
 
 // Heartbeat 心跳 ( 防止连接注册信息过期 )。
@@ -212,4 +241,35 @@ func parseLuaStringSliceResult(res any) ([]string, error) {
 		members = append(members, node)
 	}
 	return members, nil
+}
+
+func encodeMember(serviceName, serviceAddr string) string {
+	return strings.Join([]string{
+		memberVersionV1,
+		base64.RawURLEncoding.EncodeToString([]byte(serviceName)),
+		base64.RawURLEncoding.EncodeToString([]byte(serviceAddr)),
+	}, "|")
+}
+
+func decodeMember(member string) (serviceName, serviceAddr string, err error) {
+	// 成员由 3 部分组成：
+	//  1. 版本号
+	//  2. 服务名称 ( base64 编码 )
+	//  3. 服务地址 ( base64 编码 )
+	const memberParts = 3
+
+	parts := strings.SplitN(member, "|", memberParts)
+	if len(parts) != memberParts || parts[0] != memberVersionV1 {
+		return "", "", fmt.Errorf("invalid member: %s", member)
+	}
+
+	nodeBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", "", fmt.Errorf("decode node: %w", err)
+	}
+	serviceNameBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return "", "", fmt.Errorf("decode service name: %w", err)
+	}
+	return string(nodeBytes), string(serviceNameBytes), nil
 }

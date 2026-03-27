@@ -40,7 +40,7 @@ func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance, logger *zap
 
 	return NewConnRegistry(
 		rdb,
-		si.Addr,
+		si,
 		logger,
 		ConnRegistryWithTTL(cfg.TTL),
 		ConnRegistryWithKeyPrefix(cfg.KeyPrefix),

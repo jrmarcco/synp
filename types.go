@@ -43,6 +43,12 @@ type Conn interface {
 	Close() error
 }
 
+// ConnNode 是连接节点，用于表示用户连接所在的网关节点。
+type ConnNode struct {
+	ServiceName string
+	ServiceAddr string
+}
+
 // ConnRegistry 是连接注册表，用于管理连接的生命周期。
 // 需要支持多设备场景，一个用户可以在多个网关节点上有连接。
 type ConnRegistry interface {
@@ -53,7 +59,7 @@ type ConnRegistry interface {
 	Unregister(ctx context.Context, user session.User) error
 
 	// FindNodes 查找用户所有连接所在的网关节点。
-	FindNodes(ctx context.Context, bid, uid uint64) ([]string, error)
+	FindNodes(ctx context.Context, bid, uid uint64) ([]ConnNode, error)
 
 	// Heartbeat 心跳，防止连接注册信息过期。
 	Heartbeat(ctx context.Context, user session.User) error

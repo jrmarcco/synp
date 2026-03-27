@@ -1,22 +1,51 @@
 package service
 
 import (
-	"github.com/redis/go-redis/v9"
+	"context"
+
+	"github.com/jrmarcco/synp"
 	"go.uber.org/zap"
 )
 
-type LocalService interface{}
+type UserLocation struct {
+	ServiceName string
+	ServiceAddr string
+}
+
+type LocalService interface {
+	LocateUser(ctx context.Context, bid, uid uint64) ([]UserLocation, error)
+}
 
 var _ LocalService = (*DefaultLocalService)(nil)
 
 type DefaultLocalService struct {
-	rdb    redis.Cmdable
-	logger *zap.Logger
+	connRegistry synp.ConnRegistry
+	logger       *zap.Logger
 }
 
-func NewDefaultLocalService(rdb redis.Cmdable, logger *zap.Logger) *DefaultLocalService {
+func NewDefaultLocalService(
+	connRegistry synp.ConnRegistry,
+	logger *zap.Logger,
+) *DefaultLocalService {
 	return &DefaultLocalService{
-		rdb:    rdb,
-		logger: logger,
+		connRegistry: connRegistry,
+		logger:       logger,
 	}
+}
+
+func (s *DefaultLocalService) LocateUser(ctx context.Context, bid, uid uint64) ([]UserLocation, error) {
+	nodes, err := s.connRegistry.FindNodes(ctx, bid, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	userLocations := make([]UserLocation, 0, len(nodes))
+	for _, connNode := range nodes {
+		userLocations = append(userLocations, UserLocation{
+			ServiceName: connNode.ServiceName,
+			ServiceAddr: connNode.ServiceAddr,
+		})
+	}
+
+	return userLocations, nil
 }
