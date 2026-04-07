@@ -45,11 +45,10 @@ func (s *GrpcPushServer) Push(ctx context.Context, req *messagev1.PushRequest) (
 
 	downstreamMsg := &service.DownstreamMsg{
 		MessageID:  msg.GetMessageId(),
-		BizID:      msg.GetBizId(),
 		ReceiverID: msg.GetReceiverId(),
 		Body:       msg.GetBody(),
 	}
-	err := s.pushService.Push(ctx, downstreamMsg, req.NeedRetry)
+	err := s.pushService.Push(ctx, downstreamMsg, req.ShouldRetry)
 	if err != nil {
 		// 用户离线，返回用户离线状态。
 		if errors.Is(err, service.ErrUserNotOnline) {

@@ -77,6 +77,7 @@ func NewHandler(
 	}
 }
 
+// OnConnect 处理连接建立事件。
 func (h *Handler) OnConnect(conn synp.Conn) error {
 	user := conn.Session().User()
 
@@ -101,6 +102,7 @@ func (h *Handler) OnConnect(conn synp.Conn) error {
 	return nil
 }
 
+// OnDisconnect 处理连接断开事件。
 func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	user := conn.Session().User()
 
@@ -125,6 +127,7 @@ func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	return conn.Close()
 }
 
+// OnReceiveFromFrontend 处理收到前端消息的事件。
 func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	// 解析 payload。
 	msg, err := h.decodePayload(payload)
@@ -140,7 +143,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 
 	// 消息去重 ( 幂等 )。
 	user := conn.Session().User()
-	ok, err := h.cacheMessage(user.BID, msg)
+	ok, err := h.cacheMessage(user.BID, user.UID, msg)
 	if err != nil {
 		h.logger.Error(
 			"[conn-lifecycle-handler] failed to cache message",
@@ -169,7 +172,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	)
 
 	// 处理消息。
-	uMsgHandler, ok := h.uMsgHandlerMap[msg.GetCmd()]
+	uMsgHandler, ok := h.uMsgHandlerMap[msg.GetCommandType()]
 	if !ok {
 		h.logger.Error(
 			"[conn-lifecycle-handler] unknown message type from frontend",
@@ -182,7 +185,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	if err = uMsgHandler.Handle(conn, msg); err != nil {
 		// 删除消息缓存。
 		if h.needUncacheMessage(err) {
-			uncacheErr := h.uncacheMessage(user.BID, msg)
+			uncacheErr := h.uncacheMessage(user.BID, user.UID, msg)
 			if uncacheErr != nil {
 				h.logger.Error(
 					"[conn-lifecycle-handler] failed to uncache message",
@@ -206,7 +209,7 @@ func (h *Handler) decodePayload(payload []byte) (*messagev1.Message, error) {
 		return nil, fmt.Errorf("%w: unknown message type", ErrInvalidMessage)
 	}
 
-	if msg.GetCmd() != commonv1.CommandType_COMMAND_TYPE_HEARTBEAT && msg.GetMessageId() == "" {
+	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_HEARTBEAT && msg.GetMessageId() == "" {
 		// 非心跳消息，message_id 不能为空。
 		return nil, fmt.Errorf("%w: empty message_id", ErrInvalidMessage)
 	}
@@ -214,46 +217,51 @@ func (h *Handler) decodePayload(payload []byte) (*messagev1.Message, error) {
 	return msg, nil
 }
 
-func (h *Handler) cacheMessage(bizID uint64, msg *messagev1.Message) (bool, error) {
-	if msg.GetCmd() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
+// cacheMessage 缓存消息。
+func (h *Handler) cacheMessage(bid, uid uint64, msg *messagev1.Message) (bool, error) {
+	if msg.GetCommandType() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
 		return true, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.cacheRequestTimeout)
 	defer cancel()
 
-	return h.rdb.SetNX(ctx, h.cacheKey(bizID, msg.GetMessageId()), msg.GetMessageId(), h.cacheExpiration).Result()
+	return h.rdb.SetNX(
+		ctx,
+		h.cacheKey(bid, uid, msg.GetMessageId()),
+		msg.GetMessageId(),
+		h.cacheExpiration,
+	).Result()
 }
 
 func (h *Handler) needUncacheMessage(err error) bool {
 	return errors.Is(err, ErrUnknownMessageType) || errors.Is(err, ErrMaxRetryExceeded)
 }
 
-func (h *Handler) uncacheMessage(bizID uint64, msg *messagev1.Message) error {
-	if msg.GetCmd() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
+// uncacheMessage 删除消息缓存。
+func (h *Handler) uncacheMessage(bid, uid uint64, msg *messagev1.Message) error {
+	if msg.GetCommandType() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), h.cacheRequestTimeout)
 	defer cancel()
 
-	if _, err := h.rdb.Del(ctx, h.cacheKey(bizID, msg.MessageId)).Result(); err != nil {
+	if _, err := h.rdb.Del(ctx, h.cacheKey(bid, uid, msg.MessageId)).Result(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUncacheMessage, err)
 	}
 
 	return nil
 }
 
-func (h *Handler) cacheKey(bizID uint64, messageID string) string {
-	return fmt.Sprintf("%d:%s", bizID, messageID)
+func (h *Handler) cacheKey(bid, uid uint64, messageID string) string {
+	return fmt.Sprintf("%d:%d:%s", bid, uid, messageID)
 }
 
+// OnReceiveFromBackend 处理收到后端消息的事件。
 func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.PushMessage) error {
 	if msg.GetMessageId() == "" {
 		return fmt.Errorf("%w: empty message_id", ErrInvalidMessage)
-	}
-	if msg.GetBizId() == 0 {
-		return fmt.Errorf("%w: empty biz_id", ErrInvalidMessage)
 	}
 	if msg.GetReceiverId() == 0 {
 		return fmt.Errorf("%w: empty receiver_id", ErrInvalidMessage)

@@ -314,11 +314,11 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 // msg 是网关接收到的下行消息 ( 由业务服务端推送至网关 )。
 func (s *Server) findConns(msg *messagev1.PushMessage) ([]synp.Conn, error) {
 	conns, ok := s.connManager.FindUserConn(session.User{
-		BID: msg.GetBizId(),
+		BID: msg.GetBusinessId(),
 		UID: msg.GetReceiverId(),
 	})
 	if !ok {
-		return nil, fmt.Errorf("%w: user_id=%d, biz_id=%d", ErrUnknownReceiver, msg.GetReceiverId(), msg.GetBizId())
+		return nil, fmt.Errorf("%w: user_id=%d", ErrUnknownReceiver, msg.GetReceiverId())
 	}
 	return conns, nil
 }

@@ -23,9 +23,9 @@ func (c *CodecSuite) TestNormalMessage() {
 	assert.NoError(t, err)
 
 	sendMsg := &messagev1.Message{
-		MessageId: "test_message_id",
-		Cmd:       commonv1.CommandType_COMMAND_TYPE_UPSTREAM,
-		Body:      body,
+		CommandType: commonv1.CommandType_COMMAND_TYPE_UPSTREAM,
+		MessageId:   "test_message_id",
+		Body:        body,
 	}
 
 	bytes, err := c.codec.Marshal(sendMsg)
@@ -49,9 +49,9 @@ func (c *CodecSuite) TestHeartbeatMessage() {
 	t := c.T()
 
 	sendMsg := &messagev1.Message{
-		MessageId: "test_message_id",
-		Cmd:       commonv1.CommandType_COMMAND_TYPE_HEARTBEAT,
-		Body:      nil,
+		CommandType: commonv1.CommandType_COMMAND_TYPE_HEARTBEAT,
+		MessageId:   "test_message_id",
+		Body:        nil,
 	}
 
 	bytes, err := c.codec.Marshal(sendMsg)

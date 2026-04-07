@@ -16,9 +16,7 @@ import (
 var ErrUserNotOnline = errors.New("user not online")
 
 type DownstreamMsg struct {
-	MessageID string
-
-	BizID      uint64
+	MessageID  string
 	ReceiverID uint64
 
 	Body []byte
@@ -45,7 +43,6 @@ func NewDefaultPushService() *DefaultPushService {
 
 func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRetry bool) error {
 	user := session.User{
-		BID: msg.BizID,
 		UID: msg.ReceiverID,
 	}
 
@@ -54,7 +51,6 @@ func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRet
 	if !ok {
 		s.logger.Warn(
 			"[push-service] user not online",
-			zap.Uint64("bid", msg.BizID),
 			zap.Uint64("uid", msg.ReceiverID),
 			zap.String("message_id", msg.MessageID),
 		)
@@ -62,9 +58,9 @@ func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRet
 	}
 
 	downstreamMsg := &messagev1.Message{
-		Cmd:       commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
-		MessageId: msg.MessageID,
-		Body:      msg.Body,
+		CommandType: commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
+		MessageId:   msg.MessageID,
+		Body:        msg.Body,
 	}
 
 	var pushErr error

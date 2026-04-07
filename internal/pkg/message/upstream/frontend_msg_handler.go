@@ -45,14 +45,17 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 	// 接收到前端消息，更新连接活跃时间。
 	conn.UpdateActivityTime()
 
+	now := time.Now().UnixMilli()
+
 	ackPayload := &messagev1.AckPayload{
-		Success:   true,
-		Timestamp: time.Now().UnixMilli(),
+		IsSuccess:   true,
+		TimestampMs: now,
 	}
 
 	// 转发消息到业务服务端。
 	if err := h.forwardToBackend(msg); err != nil {
-		ackPayload.Success = false
+		ackPayload.IsSuccess = false
+		ackPayload.TimestampMs = now
 		ackPayload.ErrorMessage = err.Error()
 	}
 
@@ -68,9 +71,9 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 	}
 
 	return h.pushFunc(conn, &messagev1.Message{
-		MessageId: msg.GetMessageId(),
-		Cmd:       commonv1.CommandType_COMMAND_TYPE_UPSTREAM_ACK,
-		Body:      body,
+		CommandType: commonv1.CommandType_COMMAND_TYPE_UPSTREAM_ACK,
+		MessageId:   msg.GetMessageId(),
+		Body:        body,
 	})
 }
 

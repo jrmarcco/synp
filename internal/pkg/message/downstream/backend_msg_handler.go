@@ -28,9 +28,9 @@ func NewBackendMsgHandler(
 
 func (h *BackendMsgHandler) Handle(conns []synp.Conn, pushMsg *messagev1.PushMessage) error {
 	downstreamMsg := &messagev1.Message{
-		Cmd:       commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
-		MessageId: pushMsg.GetMessageId(),
-		Body:      pushMsg.GetBody(),
+		CommandType: commonv1.CommandType_COMMAND_TYPE_DOWNSTREAM,
+		MessageId:   pushMsg.GetMessageId(),
+		Body:        pushMsg.GetBody(),
 	}
 
 	// 设置重试。
