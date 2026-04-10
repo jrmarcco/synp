@@ -66,7 +66,7 @@ var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 //     - emptyCacheTTL: 200ms
 //
 // 在非严格一致性哈希路由的情况下建议先使用均衡场景并观察两个指标:
-//  1. Redis FindNodes QPS/RT。
+//  1. Redis FindNodes QPS ( 吞吐量 ) / RT ( 响应时间 )。
 //  2. “刚连上却判离线”的短时比例 ( 或首次推送失败率 )。
 type ConnRegistry struct {
 	rdb redis.Cmdable
