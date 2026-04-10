@@ -36,6 +36,9 @@ func main() {
 		// 初始化 redis.Cmdable。
 		provider.RedisFxModule,
 
+		// 初始化 go cache。
+		provider.GoCacheFxModule,
+
 		// 初始化 kafka。
 		provider.KafkaFxModule,
 		provider.KafkaConsumerFxModule,
