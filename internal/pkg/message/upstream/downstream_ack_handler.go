@@ -11,6 +11,9 @@ import (
 
 var _ UMsgHandler = (*DownstreamAckHandler)(nil)
 
+// DownstreamAckHandler 下行 ack 消息处理器。
+// 前端收到下行消息后需要发送 ack 消息给网关。
+// 网关收到 ack 消息后，会停止向前端推送下行消息的重试。
 type DownstreamAckHandler struct {
 	retransmitManager *retransmit.Manager
 }

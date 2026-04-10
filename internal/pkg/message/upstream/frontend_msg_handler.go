@@ -17,7 +17,7 @@ import (
 
 var _ UMsgHandler = (*FrontendMsgHandler)(nil)
 
-// FrontendMsgHandler 是前端消息处理器的实现，用于处理前端 ( 业务客户端 ) 发送的消息。
+// FrontendMsgHandler 前端消息处理器的实现，用于处理前端发送的消息。
 type FrontendMsgHandler struct {
 	topic            string        // 消息队列 topic
 	onReceiveTimeout time.Duration // 接收消息超时时间

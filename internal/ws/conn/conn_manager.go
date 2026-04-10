@@ -290,6 +290,7 @@ func (m *ConnManager) RemoveUserConn(user session.User) bool {
 	return true
 }
 
+// FindConn 查找用户单个连接 ( 具体到设备 )。
 func (m *ConnManager) FindConn(user session.User) (synp.Conn, bool) {
 	dc, ok := m.conns.Load(user.ConnKey())
 	if !ok {
@@ -303,6 +304,7 @@ func (m *ConnManager) FindConn(user session.User) (synp.Conn, bool) {
 	return conn, true
 }
 
+// FindUserConn 查找用户所有连接 ( 多设备 )。
 func (m *ConnManager) FindUserConn(user session.User) ([]synp.Conn, bool) {
 	connKey := user.ConnKey()
 	dc, ok := m.conns.Load(connKey)

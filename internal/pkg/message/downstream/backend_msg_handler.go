@@ -10,7 +10,7 @@ import (
 
 var _ DMsgHandler = (*BackendMsgHandler)(nil)
 
-// BackendMsgHandler 是 backend 消息处理器的实现，用于处理后端推送的消息。
+// BackendMsgHandler 后端消息 ( 下行消息 ) 处理器，用于处理后端推送的消息。
 type BackendMsgHandler struct {
 	pushFunc          message.PushFunc
 	retransmitManager *retransmit.Manager
@@ -34,7 +34,7 @@ func (h *BackendMsgHandler) Handle(conns []synp.Conn, pushMsg *messagev1.PushMes
 	}
 
 	// 设置重试。
-	// 当前端返回 ack 消息后，停止重试。
+	// 前端返回 ack 消息后停止重试。
 	defer h.retransmitManager.Start(conns, downstreamMsg)
 
 	for _, conn := range conns {

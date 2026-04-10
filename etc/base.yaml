@@ -35,6 +35,8 @@ synp:
     # 连接注册表配置
     registry:
       ttl: 30m
+      cache_ttl: 400ms
+      empty_cache_ttl: 100ms
       key_prefix: synp:conn:registry
 
     # 连接生命周期处理器配置
