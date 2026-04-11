@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/gobwas/httphead v0.1.0
 	github.com/gobwas/ws v1.4.0
-	github.com/jrmarcco/jit v0.0.7
+	github.com/jrmarcco/jit v0.0.8
 	github.com/jrmarcco/synp-api v0.0.11
 	github.com/jrmarcco/xgrpc v0.0.3
 	github.com/patrickmn/go-cache v2.1.0+incompatible
