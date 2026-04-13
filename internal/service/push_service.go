@@ -37,8 +37,18 @@ type DefaultPushService struct {
 	logger *zap.Logger
 }
 
-func NewDefaultPushService() *DefaultPushService {
-	return &DefaultPushService{}
+func NewDefaultPushService(
+	pushFunc message.PushFunc,
+	connMamanger synp.ConnManager,
+	retransmitManager *retransmit.Manager,
+	logger *zap.Logger,
+) *DefaultPushService {
+	return &DefaultPushService{
+		pushFunc:          pushFunc,
+		connMamanger:      connMamanger,
+		retransmitManager: retransmitManager,
+		logger:            logger,
+	}
 }
 
 func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRetry bool) error {
