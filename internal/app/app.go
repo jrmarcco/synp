@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,8 +100,13 @@ func (app *app) startGrpc(ctx context.Context) error {
 		return errors.New("[app] grpc server is nil")
 	}
 
+	port, err := grpcListenPortFromAddr(app.grpcServiceInstance.Addr)
+	if err != nil {
+		return err
+	}
+
 	lc := net.ListenConfig{}
-	ln, err := lc.Listen(ctx, "tcp", "127.0.0.1:5051")
+	ln, err := lc.Listen(ctx, "tcp", fmt.Sprintf("[::]:%s", port))
 	if err != nil {
 		return fmt.Errorf("[app] failed to listen grpc: %w", err)
 	}
@@ -178,6 +184,25 @@ func withOptionalTimeout(ctx context.Context, timeout time.Duration) (context.Co
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
+}
+
+func grpcListenPortFromAddr(addr string) (string, error) {
+	if addr == "" {
+		return "", errors.New("[app] invalid grpc service instance address: empty")
+	}
+
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("[app] invalid grpc service instance address %q: %w", addr, err)
+	}
+	if port == "" {
+		return "", errors.New("[app] invalid grpc service instance address: missing port")
+	}
+
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", fmt.Errorf("[app] invalid grpc service instance port %q: %w", port, err)
+	}
+	return port, nil
 }
 
 func isExpectedGRPCServeErr(err error) bool {

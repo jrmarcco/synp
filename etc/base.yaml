@@ -18,8 +18,8 @@ synp:
       level: 6
 
   grpc:
-    name: synp
-    addr: 127.0.0.1:50051
+    name: synp-gateway
+    addr: 192.168.3.3:50051
     group: synp
     registry:
       key_prefix: synp
