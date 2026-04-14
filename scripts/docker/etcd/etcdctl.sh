@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+# scripts/etcdctl.sh
 
 # ================ ↓ 连接参数 ↓ ================ #
 ETCD_ENDPOINTS="192.168.3.3:12379,192.168.3.3:22379,192.168.3.3:32379"
@@ -23,20 +23,26 @@ else
     echo "🔓 未检测到 TLS 证书 - 使用普通连接"
 fi
 
-# 先构建不带认证参数的基础命令
+# 先构建不带认证参数的基础命令 ( 使用数组避免 shell 重新解析参数 )
 if [ "$USE_TLS" = true ]; then
-    ETCDCTL_BASE_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS \
-                        --cert=$CLIENT_CERT \
-                        --key=$CLIENT_KEY \
-                        --cacert=$CA_CERT"
+    ETCDCTL_BASE_ARGS=(
+        "etcdctl"
+        "--endpoints=$ETCD_ENDPOINTS"
+        "--cert=$CLIENT_CERT"
+        "--key=$CLIENT_KEY"
+        "--cacert=$CA_CERT"
+    )
 else
-    ETCDCTL_BASE_CMD="etcdctl --endpoints=$ETCD_ENDPOINTS"
+    ETCDCTL_BASE_ARGS=(
+        "etcdctl"
+        "--endpoints=$ETCD_ENDPOINTS"
+    )
 fi
 
 # 自动检测服务端是否启用认证：
 # - 已启用：保留 --user
 # - 未启用：不拼接 --user 避免出现 "authentication is not enabled" 警告
-AUTH_PROBE_OUTPUT=$(sh -c "$ETCDCTL_BASE_CMD --user=$ETCD_USER:$ETCD_PASSWORD endpoint status --write-out=json 2>&1" || true)
+AUTH_PROBE_OUTPUT="$("${ETCDCTL_BASE_ARGS[@]}" "--user=${ETCD_USER}:${ETCD_PASSWORD}" endpoint status --write-out=json 2>&1 || true)"
 if echo "$AUTH_PROBE_OUTPUT" | grep -q "authentication is not enabled"; then
     AUTH_ENABLED=false
     echo "ℹ️  检测到 etcd 未启用认证 - 不附加 --user 参数"
@@ -46,12 +52,17 @@ else
 fi
 
 
-# 构建 etcdctl 命令
+# 构建认证参数
 if [ "$AUTH_ENABLED" = true ]; then
-    ETCDCTL_CMD="$ETCDCTL_BASE_CMD --user=$ETCD_USER:$ETCD_PASSWORD"
+    ETCDCTL_AUTH_ARGS=("--user=${ETCD_USER}:${ETCD_PASSWORD}")
 else
-    ETCDCTL_CMD="$ETCDCTL_BASE_CMD"
+    ETCDCTL_AUTH_ARGS=()
 fi
+
+# 统一安全执行入口 ( 所有参数都按字面量传递避免特殊字符被 shell 误解析 )
+run_etcdctl() {
+    "${ETCDCTL_BASE_ARGS[@]}" "${ETCDCTL_AUTH_ARGS[@]}" "$@"
+}
 
 # 显示帮助信息
 show_help() {
@@ -134,37 +145,37 @@ case "$1" in
     # 集群管理命令
     "health")
         echo "🔍 检查 etcd 集群健康状态..."
-        $ETCDCTL_CMD endpoint health
+        run_etcdctl endpoint health
         ;;
     "status")
         echo "📊 显示 etcd 集群状态..."
-        $ETCDCTL_CMD endpoint status --write-out=table
+        run_etcdctl endpoint status --write-out=table
         ;;
     "members")
         echo "👥 显示 etcd 集群成员..."
-        $ETCDCTL_CMD member list --write-out=table
+        run_etcdctl member list --write-out=table
         ;;
     "version")
         echo "🏷️ 显示 etcd 版本信息..."
-        $ETCDCTL_CMD version
+        run_etcdctl version
         ;;
     "metrics")
         echo "📈 显示集群指标..."
-        $ETCDCTL_CMD endpoint metrics
+        run_etcdctl endpoint metrics
         ;;
     "alarms")
         echo "🚨 显示告警信息..."
-        $ETCDCTL_CMD alarm list
+        run_etcdctl alarm list
         ;;
 
     # 键值操作命令
     "list")
         echo "📋 列出所有键..."
-        $ETCDCTL_CMD get --prefix "" --keys-only
+        run_etcdctl get --prefix "" --keys-only
         ;;
     "list-values")
         echo "📋 列出所有键值对..."
-        $ETCDCTL_CMD get --prefix ""
+        run_etcdctl get --prefix ""
         ;;
     "get-prefix")
         if [ -z "$2" ]; then
@@ -173,7 +184,7 @@ case "$1" in
             exit 1
         fi
         echo "🔍 获取前缀为 '$2' 的所有键值..."
-        $ETCDCTL_CMD get --prefix "$2"
+        run_etcdctl get --prefix "$2"
         ;;
     "get-range")
         if [ -z "$2" ] || [ -z "$3" ]; then
@@ -182,7 +193,7 @@ case "$1" in
             exit 1
         fi
         echo "🔍 获取范围 '$2' 到 '$3' 的键值..."
-        $ETCDCTL_CMD get "$2" "$3"
+        run_etcdctl get "$2" "$3"
         ;;
     "put")
         if [ -z "$2" ] || [ -z "$3" ]; then
@@ -191,7 +202,7 @@ case "$1" in
             exit 1
         fi
         echo "📝 设置键值: $2 = $3"
-        $ETCDCTL_CMD put "$2" "$3"
+        run_etcdctl put "$2" "$3"
         echo "✅ 键值设置成功"
         ;;
     "get")
@@ -201,7 +212,7 @@ case "$1" in
             exit 1
         fi
         echo "🔍 获取键值: $2"
-        $ETCDCTL_CMD get "$2"
+        run_etcdctl get "$2"
         ;;
     "del")
         if [ -z "$2" ]; then
@@ -210,7 +221,7 @@ case "$1" in
             exit 1
         fi
         echo "🚮 删除键值: $2"
-        $ETCDCTL_CMD del "$2"
+        run_etcdctl del "$2"
         echo "✅ 键值删除成功"
         ;;
     "del-prefix")
@@ -223,7 +234,7 @@ case "$1" in
         echo "⚠️  警告: 这将删除所有匹配的键值，请确认 (y/N): "
         read -r confirm
         if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-            $ETCDCTL_CMD del --prefix "$2"
+            run_etcdctl del --prefix "$2"
             echo "✅ 前缀键值删除成功"
         else
             echo "❌ 操作已取消"
@@ -231,7 +242,7 @@ case "$1" in
         ;;
     "count")
         echo "🔢 统计所有键的数量..."
-        count=$($ETCDCTL_CMD get --prefix "" --keys-only | wc -l)
+        count=$(run_etcdctl get --prefix "" --keys-only | wc -l)
         echo "📊 总计: $count 个键"
         ;;
     "count-prefix")
@@ -241,7 +252,7 @@ case "$1" in
             exit 1
         fi
         echo "🔢 统计前缀为 '$2' 的键数量..."
-        count=$($ETCDCTL_CMD get --prefix "$2" --keys-only | wc -l)
+        count=$(run_etcdctl get --prefix "$2" --keys-only | wc -l)
         echo "📊 前缀 '$2': $count 个键"
         ;;
 
@@ -253,7 +264,7 @@ case "$1" in
             exit 1
         fi
         echo "👀 监听键值变化: $2 (按 Ctrl+C 退出)"
-        $ETCDCTL_CMD watch "$2"
+        run_etcdctl watch "$2"
         ;;
     "watch-prefix")
         if [ -z "$2" ]; then
@@ -262,12 +273,12 @@ case "$1" in
             exit 1
         fi
         echo "👀 监听前缀键值变化: $2 (按 Ctrl+C 退出)"
-        $ETCDCTL_CMD watch --prefix "$2"
+        run_etcdctl watch --prefix "$2"
         ;;
     "txn")
         echo "🔄 执行事务操作..."
         echo "请输入事务内容 (输入 'help' 查看事务语法):"
-        $ETCDCTL_CMD txn -i
+        run_etcdctl txn -i
         ;;
 
     # 维护和管理命令
@@ -278,12 +289,12 @@ case "$1" in
             exit 1
         fi
         echo "🗜️ 压缩历史版本到: $2"
-        $ETCDCTL_CMD compact "$2"
+        run_etcdctl compact "$2"
         echo "✅ 压缩完成"
         ;;
     "defrag")
         echo "🔧 执行碎片整理..."
-        $ETCDCTL_CMD defrag
+        run_etcdctl defrag
         echo "✅ 碎片整理完成"
         ;;
     "snapshot")
@@ -293,10 +304,10 @@ case "$1" in
             exit 1
         fi
         echo "📷 创建快照: $2"
-        $ETCDCTL_CMD snapshot save "$2"
+        run_etcdctl snapshot save "$2"
         echo "✅ 快照创建成功: $2"
         echo "📋 快照信息:"
-        $ETCDCTL_CMD snapshot status "$2" --write-out=table
+        run_etcdctl snapshot status "$2" --write-out=table
         ;;
     "restore")
         if [ -z "$2" ]; then
@@ -305,12 +316,12 @@ case "$1" in
             exit 1
         fi
         echo "🔄 恢复快照: $2"
-        $ETCDCTL_CMD snapshot restore "$2"
+        run_etcdctl snapshot restore "$2"
         echo "✅ 快照恢复成功"
         ;;
     "check")
         echo "🔍 检查数据一致性..."
-        $ETCDCTL_CMD check perf
+        run_etcdctl check perf
         ;;
 
     # 租约管理命令
@@ -321,7 +332,7 @@ case "$1" in
             exit 1
         fi
         echo "⏰ 创建租约，TTL: $2 秒"
-        $ETCDCTL_CMD lease grant "$2"
+        run_etcdctl lease grant "$2"
         ;;
     "lease-revoke")
         if [ -z "$2" ]; then
@@ -330,12 +341,12 @@ case "$1" in
             exit 1
         fi
         echo "❌ 撤销租约: $2"
-        $ETCDCTL_CMD lease revoke "$2"
+        run_etcdctl lease revoke "$2"
         echo "✅ 租约撤销成功"
         ;;
     "lease-list")
         echo "📋 列出所有租约..."
-        $ETCDCTL_CMD lease list
+        run_etcdctl lease list
         ;;
     "lease-keepalive")
         if [ -z "$2" ]; then
@@ -344,7 +355,7 @@ case "$1" in
             exit 1
         fi
         echo "💓 保持租约活跃: $2 (按 Ctrl+C 退出)"
-        $ETCDCTL_CMD lease keep-alive "$2"
+        run_etcdctl lease keep-alive "$2"
         ;;
     "lease-timetolive")
         if [ -z "$2" ]; then
@@ -353,13 +364,13 @@ case "$1" in
             exit 1
         fi
         echo "⏱️ 查看租约剩余时间: $2"
-        $ETCDCTL_CMD lease timetolive "$2"
+        run_etcdctl lease timetolive "$2"
         ;;
 
     # 用户和权限管理
     "user-list")
         echo "👤 列出所有用户..."
-        $ETCDCTL_CMD user list
+        run_etcdctl user list
         ;;
     "user-add")
         if [ -z "$2" ]; then
@@ -368,7 +379,7 @@ case "$1" in
             exit 1
         fi
         echo "👤 添加用户: $2"
-        $ETCDCTL_CMD user add "$2"
+        run_etcdctl user add "$2"
         echo "✅ 用户添加成功"
         ;;
     "user-passwd")
@@ -379,7 +390,7 @@ case "$1" in
         fi
         echo "🔑 修改用户密码: $2"
         echo "请输入新密码并确认..."
-        $ETCDCTL_CMD user passwd "$2"
+        run_etcdctl user passwd "$2"
         echo "✅ 用户密码修改成功"
         ;;
     "user-delete")
@@ -389,7 +400,7 @@ case "$1" in
             exit 1
         fi
         echo "🚮 删除用户: $2"
-        $ETCDCTL_CMD user delete "$2"
+        run_etcdctl user delete "$2"
         echo "✅ 用户删除成功"
         ;;
     "user-get")
@@ -399,11 +410,11 @@ case "$1" in
             exit 1
         fi
         echo "👤 获取用户信息: $2"
-        $ETCDCTL_CMD user get "$2"
+        run_etcdctl user get "$2"
         ;;
     "role-list")
         echo "🎭 列出所有角色..."
-        $ETCDCTL_CMD role list
+        run_etcdctl role list
         ;;
     "role-add")
         if [ -z "$2" ]; then
@@ -412,7 +423,7 @@ case "$1" in
             exit 1
         fi
         echo "🎭 添加角色: $2"
-        $ETCDCTL_CMD role add "$2"
+        run_etcdctl role add "$2"
         echo "✅ 角色添加成功"
         ;;
     "role-delete")
@@ -422,33 +433,33 @@ case "$1" in
             exit 1
         fi
         echo "🚮 删除角色: $2"
-        $ETCDCTL_CMD role delete "$2"
+        run_etcdctl role delete "$2"
         echo "✅ 角色删除成功"
         ;;
     "auth-enable")
         echo "🔐 启用认证..."
-        $ETCDCTL_CMD auth enable
+        run_etcdctl auth enable
         echo "✅ 认证已启用"
         ;;
     "auth-disable")
         echo "🔓 禁用认证..."
-        $ETCDCTL_CMD auth disable
+        run_etcdctl auth disable
         echo "✅ 认证已禁用"
         ;;
 
     # 性能测试命令
     "benchmark-put")
         echo "🚀 执行 PUT 操作性能测试..."
-        $ETCDCTL_CMD benchmark put --total=10000 --val-size=256
+        run_etcdctl benchmark put --total=10000 --val-size=256
         ;;
     "benchmark-get")
         echo "🚀 执行 GET 操作性能测试..."
-        $ETCDCTL_CMD benchmark get --total=10000
+        run_etcdctl benchmark get --total=10000
         ;;
     "benchmark-mixed")
         echo "🚀 执行混合操作性能测试..."
-        $ETCDCTL_CMD benchmark put --total=10000 --val-size=256 &
-        $ETCDCTL_CMD benchmark get --total=10000 &
+        run_etcdctl benchmark put --total=10000 --val-size=256 &
+        run_etcdctl benchmark get --total=10000 &
         wait
         echo "✅ 混合性能测试完成"
         ;;
@@ -456,6 +467,6 @@ case "$1" in
     *)
         # 直接执行 etcdctl 命令
         echo "🔧 执行 etcdctl 命令: $*"
-        $ETCDCTL_CMD "$@"
+        run_etcdctl "$@"
         ;;
 esac
