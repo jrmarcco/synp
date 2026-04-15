@@ -64,6 +64,7 @@ func (t *Task) run() {
 
 	// 检查重传次数。
 	if t.retransmitCnt.Load() >= t.manager.maxRetryCnt {
+		// 重传次数达到最大重传次数，停止重传任务。
 		slog.Warn(
 			"[retransmit-manager] retransmit task reach max retry cnt",
 			"conn_id", t.conn.ID(),
@@ -148,6 +149,7 @@ func (m *Manager) start(conn synp.Conn, msg *messagev1.Message) {
 	}
 
 	if _, ok := m.tasks.LoadOrStore(task.key, task); ok {
+		// 重复启用重传任务，直接返回。
 		return
 	}
 
