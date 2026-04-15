@@ -264,6 +264,11 @@ func (s *Server) handleConn(conn net.Conn) {
 				if errors.Is(err, wsc.ErrConnClosed) {
 					return
 				}
+
+				// TODO:
+				// 如果是消息重复是否需要再发送 ACK 消息？
+				// 还是返回特定的重复错误？
+				// 目前做法是直接忽略消息。
 			}
 		case <-synpConn.Closed():
 			s.logger.Info("[server] synp connection has been closed")

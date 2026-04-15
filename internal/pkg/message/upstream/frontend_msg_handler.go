@@ -52,14 +52,13 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 		TimestampMs: now,
 	}
 
-	// 转发消息到业务服务端。
+	// 转发消息到后端。
 	if err := h.forwardToBackend(msg); err != nil {
 		ackPayload.IsSuccess = false
 		ackPayload.TimestampMs = now
 		ackPayload.ErrorMessage = err.Error()
 	}
 
-	// 发送消息到业务服务端。
 	body, err := protojson.Marshal(ackPayload)
 	if err != nil {
 		slog.Error(
@@ -70,6 +69,7 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 		return fmt.Errorf("failed to marshal ack payload: %w", err)
 	}
 
+	// 向前端发送 ACK 消息。
 	return h.pushFunc(conn, &messagev1.Message{
 		CommandType: commonv1.CommandType_COMMAND_TYPE_UPSTREAM_ACK,
 		MessageId:   msg.GetMessageId(),
@@ -77,8 +77,8 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 	})
 }
 
-// forwardToBackend 转发消息到业务服务端。
-// 通信方式为推送消息到 kafka 由业务服务端订阅并处理。
+// forwardToBackend 转发消息到后端。
+// 通信方式为推送消息到 kafka 由后端订阅并处理。
 func (h *FrontendMsgHandler) forwardToBackend(msg *messagev1.Message) error {
 	// 只需要转发 Body ( 消息体 )。
 	mqMsg := &xmq.Message{

@@ -83,9 +83,31 @@ func (s *DefaultPushService) Push(_ context.Context, msg *DownstreamMsg, needRet
 				zap.Error(err),
 			)
 			pushErr = err
+
+			// 启用重传任务。
+			s.logger.Debug(
+				"[push-service] failed to push message, starting retransmit task",
+				zap.String("conn_id", conn.ID()),
+				zap.String("message_id", msg.MessageID),
+				zap.Error(err),
+			)
+
+			s.retransmitManager.Start(conns, downstreamMsg)
 			continue
 		}
+
+		// 成功发送消息到前端，更新连接活跃时间。
 		conn.UpdateActivityTime()
+
+		// 启用重传任务。
+		// 推送成功也要启用重传任务，因为前端可能没有收到消息。
+		// 当收到前端返回的 ack 消息后会停止重传任务。
+		s.logger.Debug(
+			"[push-service] successfully pushed message, starting retransmit task",
+			zap.String("conn_id", conn.ID()),
+			zap.String("message_id", msg.MessageID),
+		)
+		s.retransmitManager.Start(conns, downstreamMsg)
 	}
 
 	if needRetry && pushErr != nil {
