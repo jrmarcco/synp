@@ -99,7 +99,8 @@ func (t *Task) run() {
 		"retransmit_count", t.retransmitCnt.Load(),
 	)
 
-	// 更新定时器。
+	// 重传任务的停止由前端返回的 ack 消息触发 ( DownstreamAckHandler )。
+	// 所以这里需要重置定时器，等待下一次重传。
 	t.timerPtr.Store(time.AfterFunc(t.manager.retryInterval, t.run))
 }
 
