@@ -180,70 +180,6 @@ func NewConn(
 	return c
 }
 
-func (c *Conn) ID() string {
-	return c.id
-}
-
-func (c *Conn) Session() session.Session {
-	return c.sess
-}
-
-func (c *Conn) Send(payload []byte) error {
-	select {
-	case <-c.ctx.Done():
-		return ErrConnClosed
-	case c.sendChan <- payload:
-		if c.ctx.Err() != nil {
-			return ErrConnClosed
-		}
-		return nil
-	}
-}
-
-func (c *Conn) Receive() <-chan []byte {
-	return c.receiveChan
-}
-
-func (c *Conn) UpdateActivityTime() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.ctx.Err() == nil {
-		c.activityTime = time.Now()
-	}
-}
-
-func (c *Conn) Closed() <-chan struct{} {
-	return c.ctx.Done()
-}
-
-func (c *Conn) Close() error {
-	// 注意:
-	//
-	// 不要关闭 c.sendChan，
-	// 这会导致 Send 方法中的 c.sendChan <- payload 分支发生 panic：send on closed channel。
-	c.closeOnce.Do(func() {
-		// 尝试发送 WebSocket 关闭帧。
-		_ = c.netConn.SetWriteDeadline(time.Now().Add(DefaultCloseTimeout))
-		_ = wsutil.WriteServerMessage(c.netConn, ws.OpClose, []byte{})
-
-		// 取消 context。
-		c.cancelFunc()
-
-		// 关闭底层连接 ( net.Conn )。
-		c.closeErr = c.netConn.Close()
-
-		// 销毁 session。
-		ctx, cancel := context.WithTimeout(context.Background(), DefaultCloseTimeout)
-		defer cancel()
-		c.closeErr = multierr.Append(
-			c.closeErr,
-			c.sess.Destroy(ctx),
-		)
-	})
-	return c.closeErr
-}
-
 func (c *Conn) sendLoop() {
 	defer func() {
 		_ = c.Close()
@@ -388,4 +324,94 @@ func (c *Conn) receiveLoop() {
 		case c.receiveChan <- payload:
 		}
 	}
+}
+
+func (c *Conn) ID() string {
+	return c.id
+}
+
+func (c *Conn) Session() session.Session {
+	return c.sess
+}
+
+func (c *Conn) Send(payload []byte) error {
+	select {
+	case <-c.ctx.Done():
+		return ErrConnClosed
+	case c.sendChan <- payload:
+		if c.ctx.Err() != nil {
+			return ErrConnClosed
+		}
+		return nil
+	}
+}
+
+func (c *Conn) Receive() <-chan []byte {
+	return c.receiveChan
+}
+
+func (c *Conn) UpdateActivityTime() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.ctx.Err() == nil {
+		c.activityTime = time.Now()
+	}
+}
+
+func (c *Conn) TryCloseIfIdle(idleTimeout time.Duration) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.ctx.Err() != nil {
+		// 连接已经被关闭。
+		return true
+	}
+
+	// 没有设置自动关闭或空闲时间小于空闲超时时间，不关闭连接。
+	if !c.autoClose || time.Since(c.activityTime) < idleTimeout {
+		return false
+	}
+
+	if err := c.Close(); err != nil {
+		// 关闭直白只记录日志。
+		c.logger.Error(
+			"[conn] failed to close connection",
+			zap.String("conn_id", c.id),
+			zap.Any("user", c.sess.User()),
+			zap.Error(err),
+		)
+	}
+	return true
+}
+
+func (c *Conn) Close() error {
+	// 注意:
+	//
+	// 不要关闭 c.sendChan，
+	// 这会导致 Send 方法中的 c.sendChan <- payload 分支发生 panic：send on closed channel。
+	c.closeOnce.Do(func() {
+		// 尝试发送 WebSocket 关闭帧。
+		_ = c.netConn.SetWriteDeadline(time.Now().Add(DefaultCloseTimeout))
+		_ = wsutil.WriteServerMessage(c.netConn, ws.OpClose, []byte{})
+
+		// 取消 context。
+		c.cancelFunc()
+
+		// 关闭底层连接 ( net.Conn )。
+		c.closeErr = c.netConn.Close()
+
+		// 销毁 session。
+		ctx, cancel := context.WithTimeout(context.Background(), DefaultCloseTimeout)
+		defer cancel()
+		c.closeErr = multierr.Append(
+			c.closeErr,
+			c.sess.Destroy(ctx),
+		)
+	})
+	return c.closeErr
+}
+
+func (c *Conn) Closed() <-chan struct{} {
+	return c.ctx.Done()
 }

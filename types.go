@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"time"
 
 	"go.uber.org/multierr"
 
@@ -38,9 +39,11 @@ type Conn interface {
 
 	UpdateActivityTime()
 
-	Closed() <-chan struct{}
+	TryCloseIfIdle(idleTimeout time.Duration) bool
 
 	Close() error
+
+	Closed() <-chan struct{}
 }
 
 // ConnNode 是连接节点，用于表示用户连接所在的网关节点。

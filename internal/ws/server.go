@@ -39,7 +39,8 @@ type Server struct {
 	connLimiter *limiter.TokenLimiter
 	backoff     *backoff.ExponentialBackOff
 
-	acceptNewConn atomic.Bool
+	acceptNewConn    atomic.Bool
+	idleScanInterval time.Duration // TODO: 空闲连接扫描间隔 还未配置完成
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -93,39 +94,13 @@ func (s *Server) Start() error {
 	s.listener = ln
 
 	go s.acceptConn()
+	go s.cleanIdleConn()
 
 	// 初始化网关业务消息消费者。
-	for key := range s.consumers {
-		switch key {
-		case gateway.EventPushMessage:
-			consumer, ok := s.consumers[key]
-			if !ok {
-				s.logger.Warn("[server] consumer not found", zap.String("event", key))
-				continue
-			}
-			if err := consumer.StartConsumer(s.ctx, s.consumePushMessage); err != nil {
-				s.logger.Error(
-					"[server] failed to start push message consumer",
-					zap.Error(err),
-				)
-				return err
-			}
-		case gateway.EventScaleUp:
-			consumer, ok := s.consumers[key]
-			if !ok {
-				s.logger.Warn("[server] consumer not found", zap.String("event", key))
-				continue
-			}
-			if err := consumer.StartConsumer(s.ctx, s.consumeScaleUp); err != nil {
-				s.logger.Error(
-					"[server] failed to start scale up consumer",
-					zap.Error(err),
-				)
-				return err
-			}
-		}
+	if err := s.initConsumers(); err != nil {
+		s.logger.Error("[server] failed to initialize consumers", zap.Error(err))
+		return err
 	}
-
 	return nil
 }
 
@@ -278,6 +253,53 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 	}
+}
+
+// cleanIdleConn 清理空闲连接。
+func (s *Server) cleanIdleConn() {
+	ticker := time.NewTicker(s.idleScanInterval)
+	defer ticker.Stop()
+
+	s.logger.Debug("[server] idle connection cleaner started")
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			s.logger.Info("[server] idle connection cleaner stopped by context done")
+			return
+		case <-ticker.C:
+			// TODO:关闭所有空闲连接。
+		}
+	}
+}
+
+// initConsumers 初始化网关业务消息消费者。
+func (s *Server) initConsumers() error {
+	for key := range s.consumers {
+		switch key {
+		case gateway.EventPushMessage:
+			consumer, ok := s.consumers[key]
+			if !ok {
+				s.logger.Warn("[server] consumer not found", zap.String("event", key))
+				continue
+			}
+			if err := consumer.StartConsumer(s.ctx, s.consumePushMessage); err != nil {
+				s.logger.Error("[server] failed to start push message consumer", zap.Error(err))
+				return err
+			}
+		case gateway.EventScaleUp:
+			consumer, ok := s.consumers[key]
+			if !ok {
+				s.logger.Warn("[server] consumer not found", zap.String("event", key))
+				continue
+			}
+			if err := consumer.StartConsumer(s.ctx, s.consumeScaleUp); err != nil {
+				s.logger.Error("[server] failed to start scale up consumer", zap.Error(err))
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // consumePushMessage 消费 push message 事件。

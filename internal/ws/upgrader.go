@@ -114,7 +114,6 @@ func (u *Upgrader) newWebsocketUpgrader(ext *wsflate.Extension, ctx *upgradeCont
 //     --header "X-Request-Id: $(uuidgen)"
 //
 //   - 启用压缩：
-//
 //     websocat -v \
 //     "wss://gateway.example.com/ws?device=pc" \
 //     --header "Authorization: Bearer <JWT>" \
@@ -225,12 +224,7 @@ func (u *Upgrader) parseHeader(ctx *upgradeContext, key, val []byte) error {
 	// 解析 auto close 参数。
 	if strings.EqualFold(string(key), "x-auto-close") {
 		ctx.autoClose = string(val) == "true"
-		u.logger.Warn(
-			"[upgrader] auto close parameter parsed",
-			zap.String("header_key", string(key)),
-			zap.String("header_value", string(val)),
-			zap.Bool("auto_close", ctx.autoClose),
-		)
+		u.logger.Debug("[upgrader] auto close parameter parsed")
 	}
 	return nil
 }
