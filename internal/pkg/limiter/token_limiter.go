@@ -74,6 +74,7 @@ func DefaultConfig() TokenLimiterConfig {
 }
 
 // TokenLimiter 令牌桶算法限流器。
+// 用于控制 WebSocket 连接数量。
 type TokenLimiter struct {
 	cfg TokenLimiterConfig
 
@@ -89,7 +90,7 @@ func NewTokenLimiter(cfg TokenLimiterConfig) *TokenLimiter {
 	tl := &TokenLimiter{
 		cfg: cfg,
 
-		tokens: make(chan struct{}, cfg.InitCapacity),
+		tokens: make(chan struct{}, cfg.MaxCapacity),
 
 		ctx:        ctx,
 		cancelFunc: cancel,

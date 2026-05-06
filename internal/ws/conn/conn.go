@@ -56,7 +56,7 @@ type Conn struct {
 
 	// 限流：
 	//
-	// 	这里使用 uber 的 ratelimit 库，是一个基于漏桶算法（Leaky Bucket）的限流器。
+	// 	这里使用 uber 的 ratelimit 库，是一个基于漏桶算法 ( Leaky Bucket ) 的限流器。
 	// 	WebSocket 消息处理需要平滑，避免突发消息阻塞 receiveChan。
 	// 	同时达到限流时优先考虑阻塞等待。
 	limitRate int
