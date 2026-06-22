@@ -83,5 +83,6 @@ var (
 				newBackendMsgHandler,
 				fx.As(new(downstream.DMsgHandler)),
 			),
-		))
+		),
+	)
 )

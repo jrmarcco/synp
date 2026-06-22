@@ -54,7 +54,6 @@ type KafkaConsumer struct {
 }
 
 func NewKafkaConsumer(topic, groupID string, readerCreateFunc KafkaReaderCreateFunc) *KafkaConsumer {
-	//nolint:gosec // 创建整个 consumer 生命周期的 context，cancel 在 Close 方法中调用。
 	ctx, cancel := context.WithCancel(context.Background())
 
 	reader := readerCreateFunc(topic, groupID)
