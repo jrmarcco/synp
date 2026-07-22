@@ -36,9 +36,6 @@ func main() {
 		// 初始化 redis.Cmdable。
 		provider.RedisFxModule,
 
-		// 初始化 go cache。
-		provider.GoCacheFxModule,
-
 		// 初始化 kafka。
 		provider.KafkaFxModule,
 		provider.KafkaConsumerFxModule,
@@ -80,26 +77,14 @@ func main() {
 }
 
 func loadConfig() error {
-	configPath := pflag.String("config-dir", "etc", "config directory")
+	configFile := pflag.String("config", "etc/config.yaml", "config file (default: etc/config.yaml)")
 	pflag.Parse()
 
-	viper.AddConfigPath(*configPath)
+	viper.SetConfigFile(*configFile)
 	viper.SetConfigType("yaml")
 
-	// 读取基础配置。
-	viper.SetConfigName("base")
 	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read base config: %w", err)
+		return fmt.Errorf("failed to read config: %w", err)
 	}
-
-	// 合并其他配置文件。
-	subConfigNames := []string{"etcd", "redis", "kafka"}
-	for _, subConfigName := range subConfigNames {
-		viper.SetConfigName(subConfigName)
-		if err := viper.MergeInConfig(); err != nil {
-			return fmt.Errorf("failed to merge %s config: %w", subConfigName, err)
-		}
-	}
-
 	return nil
 }

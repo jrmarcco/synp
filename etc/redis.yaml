@@ -1,4 +1,0 @@
-# Redis 配置
-redis:
-  addr: 192.168.3.3:6379
-  password: <passwd>

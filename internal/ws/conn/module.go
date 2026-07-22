@@ -5,7 +5,6 @@ import (
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
@@ -28,17 +27,10 @@ var ConnFxModule = fx.Module(
 	),
 )
 
-func newConnRegistry(
-	rdb redis.Cmdable,
-	cache *gocache.Cache,
-	si register.ServiceInstance,
-	logger *zap.Logger,
-) (*ConnRegistry, error) {
+func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance, logger *zap.Logger) (*ConnRegistry, error) {
 	type config struct {
-		KeyPrefix     string        `mapstructure:"key_prefix"`
-		TTL           time.Duration `mapstructure:"ttl"`
-		CacheTTL      time.Duration `mapstructure:"cache_ttl"`
-		EmptyCacheTTL time.Duration `mapstructure:"empty_cache_ttl"`
+		KeyPrefix string        `mapstructure:"key_prefix"`
+		TTL       time.Duration `mapstructure:"ttl"`
 	}
 
 	cfg := config{}
@@ -48,14 +40,12 @@ func newConnRegistry(
 
 	return NewConnRegistry(
 		rdb,
-		cache,
-
-		si,
+		synp.ConnNode{
+			ServiceName: si.Name,
+			ServiceAddr: si.Addr,
+		},
 		logger,
-
 		ConnRegistryWithTTL(cfg.TTL),
-		ConnRegistryWithCacheTTL(cfg.CacheTTL),
-		ConnRegistryWithEmptyCacheTTL(cfg.EmptyCacheTTL),
 		ConnRegistryWithKeyPrefix(cfg.KeyPrefix),
 	), nil
 }

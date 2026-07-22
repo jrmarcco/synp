@@ -1,3 +1,135 @@
+profile:
+  env: dev
+
+synp:
+  # WebSocket 配置
+  websocket:
+    host: 0.0.0.0
+    port: 10071
+    compression:
+      enabled: true
+      # 服务端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
+      # 内存/CPU 吃紧 ( 超高并发 ) 的场景下可以调整为 13。
+      server_max_window_bits: 15
+      server_no_context_takeover: false
+      # 客户端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
+      client_max_window_bits: 15
+      client_no_context_takeover: false
+      level: 6
+
+  grpc:
+    name: synp-gateway
+    addr: 192.168.3.3:50051
+    group: synp
+    registry:
+      key_prefix: synp
+      lease_ttl: 30 # 单位：秒 ( 这里和 etcd api 保持一直所以是秒单位 )
+      timeout: 10s
+
+  # 编解码器配置 ( json / proto )
+  codec:
+    type: json
+
+  # 连接配置
+  conn:
+    # 连接注册表配置
+    registry:
+      ttl: 30m
+      cache_ttl: 400ms
+      empty_cache_ttl: 100ms
+      key_prefix: synp:conn:registry
+
+    # 连接生命周期处理器配置
+    handler:
+      cache_request_timeout: 10s
+      cache_expiration: 10s
+
+    # 连接管理器配置
+    manager:
+      read_timeout: 15s
+      write_timeout: 10s
+      init_retry_interval: 1s
+      max_retry_interval: 5s
+      max_retry_count: 3
+      send_buffer_size: 256
+      receive_buffer_size: 256
+      close_timeout: 1s
+
+  # 消息处理器配置
+  message_handler:
+    frontend:
+      topic: synp.message.upstream
+      on_receive_timeout: 3s
+
+  # 网关事件消费者配置
+  gateway:
+    consumer:
+      # downstream 消息消费者
+      event_message_downstream:
+        topic: synp.message.downstream
+        group_id: synp-downstream-message-consumer
+        partitions: 6
+        handle_timeout: 16s
+
+jwt:
+  issuer: hermet-access
+  public: |
+    -----BEGIN PUBLIC KEY-----
+    MCowBQYDK2VwAyEA818wiIDR2aqxvLKcyQL2qvVCYlSs2A/izQi/K109rlU=
+    -----END PUBLIC KEY-----
+
+etcd:
+  endpoints:
+    - 192.168.3.3:12379
+    - 192.168.3.3:22379
+    - 192.168.3.3:32379
+  username: synp
+  password: <passwd>
+  dial_timeout: 10s
+  tls:
+    enabled: true
+    server_name: synp
+    insecure_skip_verify: false
+    cert_pem: |
+      -----BEGIN CERTIFICATE-----
+      MIICKzCCAd2gAwIBAgIUJOaz8vBHmLNISw9doSwZw5K0WYIwBQYDK2VwMF8xCzAJ
+      BgNVBAYTAkNOMRAwDgYDVQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0w
+      CwYDVQQKDARTeW5wMQswCQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAeFw0y
+      NjAzMDcwOTIzMTdaFw0yNzAzMDcwOTIzMTdaMHYxCzAJBgNVBAYTAkNOMRAwDgYD
+      VQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0wCwYDVQQKDARTeW5wMRkw
+      FwYDVQQLDBBzeW5wLWV0Y2QtY2xpZW50MRkwFwYDVQQDDBBzeW5wLWV0Y2QtY2xp
+      ZW50MCowBQYDK2VwAyEAReTAvSwLjxsrzIuq001cukVpUH/eGTmy7NMzJXZVLXuj
+      gZMwgZAwCQYDVR0TBAIwADALBgNVHQ8EBAMCBeAwEwYDVR0lBAwwCgYIKwYBBQUH
+      AwIwIQYDVR0RBBowGIIQc3lucC1ldGNkLWNsaWVudIcEfwAAATAdBgNVHQ4EFgQU
+      QCbrF5CaCoqjSSiHnotaqCZWpWgwHwYDVR0jBBgwFoAUewDihDVtIGdG4iKpslG0
+      /otZCKwwBQYDK2VwA0EAt8JWS+qyNnkGZ9DvX405mxHUiYb/J5pMAxiKsiK4nWGu
+      C5F5dukOvWxwyeTdMM5kNUQSIVwpDVMuXbbsMttpAw==
+      -----END CERTIFICATE-----
+
+    cert_key: |
+      -----BEGIN PRIVATE KEY-----
+      MC4CAQAwBQYDK2VwBCIEIPUrWstlCsnf8lV7ioS7XTnm+GOvfs291j65sfu3j3mU
+      -----END PRIVATE KEY-----
+
+    ca_cert: |
+      -----BEGIN CERTIFICATE-----
+      MIIB0zCCAYWgAwIBAgIUbL6WFUxfu1r8RuA3/fax2iUy+DowBQYDK2VwMF8xCzAJ
+      BgNVBAYTAkNOMRAwDgYDVQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0w
+      CwYDVQQKDARTeW5wMQswCQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAeFw0y
+      NjAzMDcwOTIzMTdaFw0yNzAzMDcwOTIzMTdaMF8xCzAJBgNVBAYTAkNOMRAwDgYD
+      VQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0wCwYDVQQKDARTeW5wMQsw
+      CQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAqMAUGAytlcAMhABBNjYVko1pc
+      UPYz+SAfIMTcT8F3b/d77zMv1ERRRMZ7o1MwUTAdBgNVHQ4EFgQUewDihDVtIGdG
+      4iKpslG0/otZCKwwHwYDVR0jBBgwFoAUewDihDVtIGdG4iKpslG0/otZCKwwDwYD
+      VR0TAQH/BAUwAwEB/zAFBgMrZXADQQAvJnfb2NC9k6mxSZPyLCVCzi/qbP3r6KhJ
+      7cZnHNtIDgtKVzeOQTpv2tsJxreBCftV1GcicM+47ltUNHwYgxcB
+      -----END CERTIFICATE-----
+
+# Redis 配置
+redis:
+  addr: 192.168.3.3:6379
+  password: <passwd>
+
 # Kafka 配置
 kafka:
   # Kafka Broker
