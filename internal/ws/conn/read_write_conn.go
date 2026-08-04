@@ -164,20 +164,22 @@ func (c *ReadWriteConn) readWriteLoop() {
 						zap.String("conn_id", c.id),
 						zap.Any("user", c.sess.User()),
 					)
-				} else {
-					c.logger.Error(
-						"[read-write-conn] failed to read message from client",
-						zap.String("conn_id", c.id),
-						zap.Any("user", c.sess.User()),
-						zap.Error(err),
-					)
+					return
 				}
+
+				c.logger.Error(
+					"[read-write-conn] failed to read message from client",
+					zap.String("conn_id", c.id),
+					zap.Any("user", c.sess.User()),
+					zap.Error(err),
+				)
 				return
 			}
 		}
 	}
 }
 
+//nolint:dupl // ignore.
 func (c *ReadWriteConn) trySend(payload []byte) bool {
 	retryStrategy, _ := xretry.NewExponentialBackoffStrategy(
 		c.initRetryInterval,
