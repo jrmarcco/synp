@@ -24,8 +24,9 @@ var ErrConnClosed = errors.New("connection closed")
 
 var _ synp.Conn = (*Conn)(nil)
 
-// Conn 代表一个 WebSocket 连接。
-// Conn 封装了 net.Conn，只负责消息的读写。
+// Conn 代表一个 WebSocket 连接，封装了 net.Conn。
+// 同时负责 WebSocket 消息的读写。
+// 读写操作分别由独立的 goroutine 负责。
 type Conn struct {
 	id   string
 	sess session.Session
@@ -45,7 +46,7 @@ type Conn struct {
 	maxRetryInterval  time.Duration
 	maxRetryCount     int32
 
-	// 通信通道
+	// 通信 channel
 	sendChan    chan []byte
 	receiveChan chan []byte
 
@@ -171,15 +172,15 @@ func NewConn(
 	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled)
 
 	// 启动收发数据的 goroutine。
-	//nolint:contextcheck // sendLoop 内部使用 c.ctx。
-	go c.sendLoop()
-	//nolint:contextcheck // receiveLoop 内部使用 c.ctx。
-	go c.receiveLoop()
+	//nolint:contextcheck // writeLoop 内部使用 c.ctx。
+	go c.writeLoop()
+	//nolint:contextcheck // readLoop 内部使用 c.ctx。
+	go c.readLoop()
 
 	return c
 }
 
-func (c *Conn) sendLoop() {
+func (c *Conn) writeLoop() {
 	defer func() {
 		_ = c.Close()
 	}()
@@ -266,7 +267,7 @@ func (c *Conn) trySend(payload []byte) bool {
 	}
 }
 
-func (c *Conn) receiveLoop() {
+func (c *Conn) readLoop() {
 	defer func() {
 		close(c.receiveChan)
 		_ = c.Close()
@@ -390,12 +391,12 @@ func (c *Conn) Close() error {
 	// 不要关闭 c.sendChan，
 	// 这会导致 Send 方法中的 c.sendChan <- payload 分支发生 panic：send on closed channel。
 	c.closeOnce.Do(func() {
+		// 取消 context。
+		c.cancelFunc()
+
 		// 尝试发送 WebSocket 关闭帧。
 		_ = c.netConn.SetWriteDeadline(time.Now().Add(DefaultCloseTimeout))
 		_ = wsutil.WriteServerMessage(c.netConn, ws.OpClose, []byte{})
-
-		// 取消 context。
-		c.cancelFunc()
 
 		// 关闭底层连接 ( net.Conn )。
 		c.closeErr = c.netConn.Close()
