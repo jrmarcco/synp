@@ -20,6 +20,7 @@ require (
 	go.uber.org/ratelimit v0.3.1
 	go.uber.org/zap v1.28.0
 	go.uber.org/zap/exp v0.3.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
