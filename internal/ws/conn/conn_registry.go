@@ -37,7 +37,9 @@ var (
 var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 
 // ConnRegistry 是连接注册表。
-// 使用 Redis ZSET 存储用户连接所在网关节点及其过期时间（score）。
+// 使用 Redis ZSET 存储用户连接所在网关节点及其过期时间 ( score )。
+//
+// TODO: 注册结构需要调整。
 //
 //	┌──────────────────────────────────────┐
 //	│              Redis                   │
@@ -49,6 +51,10 @@ var _ synp.ConnRegistry = (*ConnRegistry)(nil)
 // 说明：
 //  1. 每个节点有自己的过期时间，避免 key 级 TTL 导致脏节点被续命。
 //  2. FindNodes 时会先清理过期节点，再返回当前有效节点。
+//
+// 注：更优方案是独立出一个 Route Service。
+//  1. 网关节点 -> gRPC -> Route Service -> Redis ( 用户建立连接时注册 )。
+//  2. 业务服务端 -> gRPC -> Route Service ( 下行消息转发时查询目标网关集群 )。
 type ConnRegistry struct {
 	rdb redis.Cmdable
 
