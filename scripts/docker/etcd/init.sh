@@ -7,10 +7,19 @@ cd "$SCRIPT_DIR"
 echo "🚀 Etcd 集群初始化脚本"
 echo ""
 
-# 1. 创建数据目录
-NUM_DIRS=${1:-3}
-echo "📁 创建 $NUM_DIRS 个数据目录..."
-for i in $(seq 1 $NUM_DIRS); do
+# 0. 外部网络 ( compose 依赖 external 网络, 不存在则创建 )
+NETWORK_NAME="jrmarcco_net"
+if ! docker network ls --format '{{.Name}}' | grep -q "^${NETWORK_NAME}$"; then
+    echo "🌐 创建外部网络 ${NETWORK_NAME}..."
+    docker network create "${NETWORK_NAME}"
+else
+    echo "ℹ️  外部网络 ${NETWORK_NAME} 已存在"
+fi
+echo ""
+
+# 1. 创建数据目录 ( 与 docker-compose.yaml 的 3 节点一一对应 )
+echo "📁 创建 3 个数据目录..."
+for i in 1 2 3; do
     DATA_DIR="./data-$i"
     if [ -d "$DATA_DIR" ]; then
         echo "  📁 数据目录 $DATA_DIR 已存在"

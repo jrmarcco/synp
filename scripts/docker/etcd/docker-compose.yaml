@@ -3,6 +3,15 @@ x-etcd-common: &etcd-common
   restart: unless-stopped
   networks:
     - jrmarcco_net
+  healthcheck:
+    # 就绪探测: 本节点 endpoint health。
+    # server 证书 EKU 同时含 serverAuth/clientAuth, 可直接作客户端证书。
+    # 注意: coreos/etcd 为 distroless 镜像 ( 无 shell ), 必须用 exec 数组形式。
+    test: ["CMD", "etcdctl", "--endpoints=https://localhost:2379", "--cert=/etcd-certs/server.pem", "--key=/etcd-certs/server-key.pem", "--cacert=/etcd-certs/ca.pem", "endpoint", "health"]
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 20s
   environment: &etcd-common-env
     ETCD_DATA_DIR: /etcd-data
     ETCD_LISTEN_CLIENT_URLS: https://0.0.0.0:2379

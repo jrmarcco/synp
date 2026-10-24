@@ -1,24 +1,52 @@
-FROM golang:1.25 AS builder
+# syntax=docker/dockerfile:1
+
+# ==================== 构建阶段 ====================
+ARG GO_VERSION=1.27
+
+FROM golang:${GO_VERSION}-alpine AS builder
+
+# 代理可选注入 ( 国内网络: --build-arg GOPROXY=https://goproxy.cn,direct )，
+# 不再写死进镜像层。
+ARG GOPROXY=""
 
 WORKDIR /app
+
+ENV CGO_ENABLED=0
 
 COPY go.mod go.sum ./
-
-RUN go env -w GOPROXY=https://goproxy.cn,direct
-RUN go mod download
+RUN if [ -n "$GOPROXY" ]; then go env -w GOPROXY="$GOPROXY"; fi \
+    && go mod download
 
 COPY . .
+RUN go build -trimpath -ldflags="-s -w" -o /out/synp ./cmd
 
-RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o synp ./cmd/main.go
+# ==================== 运行阶段 ====================
+# alpine + 非 root: 体积小、带 busybox ( HEALTHCHECK 的 wget、进容器排查 )，
+# ca-certificates 供 JWKS 等公网 HTTPS 使用。
+FROM alpine:3.21
 
-FROM golang:1.25-alpine
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+
+RUN apk add --no-cache ca-certificates tzdata \\
+    && adduser -D -u 10001 synp
 
 WORKDIR /app
 
-COPY --from=builder /app/synp .
-# 配置文件
-# COPY --from=builder /app/etc/config.yaml config.yaml
+COPY --from=builder /out/synp ./synp
 
-RUN chmod +x ./synp
+USER synp
 
-CMD ["./synp", "--config=config.yaml"]
+# 10071: WebSocket 数据面; 9090: 管理面 ( /metrics /healthz /readyz /debug/pprof )。
+EXPOSE 10071 9090
+
+STOPSIGNAL SIGTERM
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\
+    CMD wget -q -O /dev/null http://127.0.0.1:9090/healthz || exit 1
+
+# 配置文件不打包进镜像，运行时必须挂载:
+#   docker run -v $PWD/etc/config.yaml:/app/etc/config.yaml:ro synp-gateway
+ENTRYPOINT ["./synp"]
+CMD ["--config", "etc/config.yaml"]

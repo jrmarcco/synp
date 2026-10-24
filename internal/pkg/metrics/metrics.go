@@ -6,6 +6,7 @@
 package metrics
 
 import (
+	"github.com/jrmarcco/synp/internal/pkg/buildinfo"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -115,5 +116,22 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 10),
 	}, []string{"op"})
 
-	// ConsumerLag 无法直接从 kafka-go 获取，由 Kafka 自身指标覆盖 ( JMX/exporter )。
+	// ConsumerHandleDuration 通知消息消费处理耗时 ( 含查找连接与逐连接入队 )。
+	ConsumerHandleDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: namespace,
+		Name:      "consumer_handle_duration_seconds",
+		Help:      "Notify consumer handle latency ( find conns + enqueue ).",
+		Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 13), // 0.5ms ~ 4s
+	})
+
+	// buildInfo 版本信息 ( 值恒为 1, label 携带版本元数据 )。
+	buildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "build_info",
+		Help:      "Build metadata; the value is always 1.",
+	}, []string{"version", "commit", "date"})
 )
+
+func init() {
+	buildInfo.WithLabelValues(buildinfo.Version, buildinfo.Commit, buildinfo.Date).Set(1)
+}

@@ -1,10 +1,14 @@
-#!/bin/bash
-# scripts/etcdctl.sh
+#!/usr/bin/env bash
+# 便捷的 etcd 集群管理脚本。
+#
+# 连接参数支持环境变量覆盖 ( 也可在同目录 .env 中配置后 source )，
+# 密码不落入版本库。
+set -euo pipefail
 
-# ================ ↓ 连接参数 ↓ ================ #
-ETCD_ENDPOINTS="192.168.3.3:12379,192.168.3.3:22379,192.168.3.3:32379"
-ETCD_USER="root"
-ETCD_PASSWORD="<root_passwd>"
+# ================ ↓ 连接参数 ( 环境变量可覆盖 ) ↓ ================ #
+ETCD_ENDPOINTS="${ETCD_ENDPOINTS:-192.168.3.3:12379,192.168.3.3:22379,192.168.3.3:32379}"
+ETCD_USER="${ETCD_USER:-root}"
+ETCD_PASSWORD="${ETCD_PASSWORD:-}"
 
 # TLS 证书路径
 CERT_DIR="./certs"

@@ -2,7 +2,9 @@
 set -euo pipefail
 
 CERTS_DIR="./certs"
-PASSWORD="kafka-secret"
+# 密码必须与 docker-compose.yaml 的 KAFKA_TLS_KEY_PASSWORD 同源，
+# 否则生成的密钥库与 broker 配置不匹配，TLS 握手失败。
+PASSWORD="${KAFKA_TLS_KEY_PASSWORD:-kafka-secret}"
 VALIDITY=3650
 KEYSIZE=2048
 
@@ -187,6 +189,13 @@ openssl pkcs12 -in ${CERTS_DIR}/client.p12 -passin pass:"${PASSWORD}" -nocerts -
 openssl pkcs12 -in ${CERTS_DIR}/client.p12 -passin pass:"${PASSWORD}" -clcerts -nokeys | openssl x509 -out ${CERTS_DIR}/client.crt
     # -out ${CERTS_DIR}/client.crt \
 
+
+# 导出 CA 的通用命名副本 ( 非 JVM 客户端习惯 ca.crt 命名 )
+cp ${CERTS_DIR}/ca-cert ${CERTS_DIR}/ca.crt
+
+# openssl 导出的私钥默认 0600 且归生成者所有，
+# 显式放开供当前用户读取 ( 仅限本地开发环境 )。
+chmod 644 ${CERTS_DIR}/client.key ${CERTS_DIR}/client.crt ${CERTS_DIR}/ca-cert ${CERTS_DIR}/ca.crt
 
 # 清理临时文件
 rm -f .srl ${CERTS_DIR}/*.csr ${CERTS_DIR}/*.signed.crt ${CERTS_DIR}/client.p12 ${CERTS_DIR}/*.srl

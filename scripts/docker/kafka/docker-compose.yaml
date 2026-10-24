@@ -1,13 +1,17 @@
 x-kafka-common: &kafka-common
-  image: apache/kafka:latest
+  # 版本固定，保证部署可复现 ( 可经 .env 覆盖 )。
+  image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
   restart: unless-stopped
   networks:
     - jrmarcco_net
   healthcheck:
-    test: ["CMD-SHELL", "ps aux | grep -q 'kafka.Kafka' && test -f /var/lib/kafka/data/meta.properties || exit 1"]
-    interval: 30s
-    timeout: 10s
-    retries: 5
+    # 就绪探测: EXTERNAL listener 端口可建立 TCP 连接。
+    # ( 进程存在性检查无法反映监听就绪 )
+    test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/9092' || exit 1"]
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
   environment: &kafka-common-env
     # 集群配置
     CLUSTER_ID: ${KAFKA_CLUSTER_ID}
@@ -117,7 +121,7 @@ services:
 
   # Kafka UI - Web 管理界面
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: ${KAFKA_UI_IMAGE:-provectuslabs/kafka-ui:v0.7.2}
     hostname: kafka-ui
     container_name: kafka-ui
     restart: unless-stopped
@@ -129,7 +133,10 @@ services:
       SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD}
 
       KAFKA_CLUSTERS_0_NAME: kafka-cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
+      # 同网络容器互访必须走 INTERNAL listener ( 9093 )：
+      # EXTERNAL ( 9092 ) 的 advertised 地址是宿主机外部 IP，
+      # 元数据会把客户端引到集群外，依赖宿主网络可达的环境巧合。
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9093,kafka-2:9093,kafka-3:9093
 
       # SSL 配置
       KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SSL

@@ -1,0 +1,10 @@
+# dashboard provisioning 提供者 ( 目录初始为空, 按需放入 JSON 后自动加载 )。
+apiVersion: 1
+
+providers:
+  - name: synp-default
+    orgId: 1
+    folder: ""
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

@@ -425,6 +425,11 @@ func (s *Server) initConsumers() error {
 // 通知 topic 为广播消费：每个网关节点独立消费全量，
 // 按本地连接过滤后下发，节点上无该用户连接时忽略 ( 通知丢失只影响实时性 )。
 func (s *Server) consumeNotifyMessage(ctx context.Context, msg *xmq.Message) error {
+	start := time.Now()
+	defer func() {
+		metrics.ConsumerHandleDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	notifyMsg := &messagev1.NotifyMessage{}
 	// 后端 ( 业务服务端 ) 投递到通知 topic 的记录使用 protojson 编码。
 	if err := protojson.Unmarshal(msg.Val, notifyMsg); err != nil {

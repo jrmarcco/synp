@@ -64,3 +64,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# docker 本地部署产物 ( 证书/数据/环境 )
+scripts/docker/*/certs/
+scripts/docker/*/data-*/
+scripts/docker/kafka/kafka-*-data/
+scripts/docker/kafka/.env

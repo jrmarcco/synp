@@ -1,9 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== 生成 etcd 3 节点集群 Ed25519 TLS 证书 ( 仅 DNS 配置 )==="
+echo "=== 生成 etcd 3 节点集群 Ed25519 TLS 证书 ==="
 
 VALIDITY_DAYS=365
+
+# SAN 可通过环境变量覆盖 ( 域名与 IP 均支持 )。
+SAN_IPS="${SAN_IPS:-127.0.0.1,::1,192.168.3.3}"
+SAN_DOMAINS="${SAN_DOMAINS:-localhost,node-1,node-2,node-3}"
+
+build_san_lines() {
+    local lines="" idx=1
+
+    IFS=',' read -ra DOMAINS <<< "$SAN_DOMAINS"
+    for domain in "${DOMAINS[@]}"; do
+        domain=$(echo "$domain" | xargs)
+        if [ -n "$domain" ]; then
+            lines="${lines}DNS.${idx} = ${domain}\n"
+            idx=$((idx + 1))
+        fi
+    done
+
+    local ip_idx=1
+    IFS=',' read -ra IPS <<< "$SAN_IPS"
+    for ip in "${IPS[@]}"; do
+        ip=$(echo "$ip" | xargs)
+        if [ -n "$ip" ]; then
+            lines="${lines}IP.${ip_idx} = ${ip}\n"
+            ip_idx=$((ip_idx + 1))
+        fi
+    done
+
+    echo "$lines"
+}
+
+SAN_LINES="$(printf '%b' "$(build_san_lines)")"
+echo "SAN 配置:"
+printf '%b\n' "${SAN_LINES}"
 
 # 创建证书目录
 CERT_DIR="./certs"
@@ -45,19 +78,8 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-# ===== 本地回环 ( 保留 localhost 用于测试 ) =====
-DNS.1 = localhost
-IP.1 = 127.0.0.1
-IP.2 = ::1
-
-# ===== Docker 容器名称，集群情况下配置多个 =====
-DNS.2 = node-1
-DNS.3 = node-2
-DNS.4 = node-3
-
-# ===== 如果需要外部访问，添加主机名 或 IP =====
-# DNS.5 = etcd.yourdomain.com
-IP.3 = 192.168.3.3
+# ===== 由 SAN_IPS / SAN_DOMAINS 环境变量生成 =====
+$(echo "$SAN_LINES")
 EOF
 
 echo "5. 生成 etcd 服务器证书请求"

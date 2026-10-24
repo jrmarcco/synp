@@ -1,0 +1,30 @@
+# 构建上下文裁剪: 加快传输、避免敏感文件进入构建层。
+.git
+.gitignore
+.idea
+.vscode
+.editorconfig
+
+# 本地部署产物 ( 含私钥与数据 )
+scripts/docker/*/certs
+scripts/docker/*/data-*
+scripts/docker/*/kafka-*-data
+scripts/docker/kafka/.env
+scripts/docker/*/certs/
+
+# 文档与编排脚本不参与构建
+doc/
+scripts/docker/
+scripts/git/
+scripts/lint/
+LICENSE
+README.md
+Makefile
+
+# 本地测试产物
+test_ws_connect.sh
+test_ws_message.json
+
+# Go 构建缓存目录 ( 若存在 )
+*.out
+coverage.*

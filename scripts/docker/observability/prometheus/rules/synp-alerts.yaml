@@ -1,0 +1,76 @@
+# synp 网关基础告警规则 ( 起始阈值, 按压测基线调整 )。
+groups:
+  - name: synp-gateway
+    rules:
+      - alert: SynpGatewayDown
+        expr: up{service="synp-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关指标抓取失败"
+          description: "目标 {{ $labels.instance }} 持续 1 分钟不可抓取, 疑似进程退出或管理端口不可达。"
+
+      - alert: SynpConnectionDrop
+        expr: |
+          delta(synp_online_connections[5m]) < -0.3 * synp_online_connections
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "在线连接数 5 分钟内骤降超 30%"
+          description: "当前 {{ $value | humanize }} 变化率, 疑似大规模断连 ( 上游故障/网络抖动/发布 )。"
+
+      # 就绪探针 ( /readyz ) 的告警由编排层承担:
+      # k8s 的 liveness/readiness probe 事件、或 blackbox exporter 对 /readyz 的探测,
+      # 不在本文件内重复实现。
+
+      - alert: SynpNotifyDropRateHigh
+        expr: |
+          rate(synp_notify_drop_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NOTIFY 丢弃速率过高 ( >1/s 持续 5 分钟 )"
+          description: "存在持续慢客户端或消费阻塞; 结合 synp_consumer_handle_duration_seconds 与 send_enqueue_timeout_total 定位。"
+
+      - alert: SynpKafkaProduceP99High
+        expr: |
+          histogram_quantile(0.99, rate(synp_kafka_produce_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka 上行写入 p99 > 500ms"
+          description: "acks=all 延迟升高, 上行 ACK 尾延迟将同步恶化; 检查 broker 状态与网络。"
+
+      - alert: SynpAuthDurationP99High
+        expr: |
+          histogram_quantile(0.99, rate(synp_auth_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AUTH 鉴权 p99 > 1s"
+          description: "重连风暴或 Redis/JWKS 延迟升高; 结合 synp_redis_dedup_duration_seconds 定位。"
+
+      - alert: SynpRegistryOpP99High
+        expr: |
+          histogram_quantile(0.99, rate(synp_registry_op_duration_seconds_bucket[5m])) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "路由注册操作 p99 > 300ms"
+          description: "Redis 压力或网络异常, 心跳刷新将受影响 ( TTL 过期风险 )。"
+
+      - alert: SynpGoroutinesGrowing
+        expr: |
+          delta(go_goroutines{service="synp-gateway"}[30m]) > 10000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "goroutine 数 30 分钟净增超 1 万"
+          description: "疑似连接清理泄漏; 结合 synp_online_connections 与 go_goroutines 趋势确认。"
