@@ -5,7 +5,7 @@ import (
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/codec"
-	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
+	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
@@ -30,7 +30,7 @@ type connHandlerFxParams struct {
 	Codec codec.Codec
 
 	UMsgHandlers []upstream.UMsgHandler `group:"upstream-message-handler"`
-	DMsgHandler  downstream.DMsgHandler
+	NMsgHandler  notify.NMsgHandler
 
 	ConnRegistry synp.ConnRegistry
 
@@ -53,7 +53,7 @@ func newConnLifecycleHandler(params connHandlerFxParams) (*Handler, error) {
 		cfg.CacheRequestTimeout,
 		cfg.CacheExpiration,
 		params.Codec,
-		params.DMsgHandler,
+		params.NMsgHandler,
 		params.UMsgHandlers,
 		params.ConnRegistry,
 		params.Logger,

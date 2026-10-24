@@ -2,7 +2,6 @@ package api
 
 import (
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
-	nodev1 "github.com/jrmarcco/synp-api/api/go/node/v1"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 )
@@ -10,19 +9,16 @@ import (
 var GrpcApiFxModule = fx.Module(
 	"grpc-api",
 	fx.Provide(
-		NewGrpcPushServer,
-		NewGrpcLocateServer,
+		NewGrpcNotifyServer,
 		newGrpcServer,
 	),
 )
 
 // newGrpcServer 创建 gRPC 服务器。
-func newGrpcServer(pushServer *GrpcPushServer, locateServer *GrpcLocateServer) *grpc.Server {
+func newGrpcServer(notifyServer *GrpcNotifyServer) *grpc.Server {
 	grpcServer := grpc.NewServer()
 
-	// 注册 message service。
-	messagev1.RegisterPushServiceServer(grpcServer, pushServer)
-	// 注册 locate service。
-	nodev1.RegisterLocateServiceServer(grpcServer, locateServer)
+	// 注册 notify service。
+	messagev1.RegisterNotifyServiceServer(grpcServer, notifyServer)
 	return grpcServer
 }

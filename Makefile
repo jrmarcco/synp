@@ -21,7 +21,17 @@ check:
 	@$(MAKE) --no-print-directory fmt
 	@$(MAKE) --no-print-directory tidy
 
-# lint code
+# static check with go vet
+.PHONY: vet
+vet:
+	@go vet ./...
+
+# lint code (baseline tier, CI blocking)
 .PHONY: lint
 lint:
 	@golangci-lint run -c ./scripts/lint/.golangci.yaml ./...
+
+# lint code (strict tier, report-only target)
+.PHONY: lint-strict
+lint-strict:
+	@golangci-lint run -c ./scripts/lint/.golangci.strict.yaml ./...

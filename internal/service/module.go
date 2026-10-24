@@ -1,18 +1,22 @@
 package service
 
-import "go.uber.org/fx"
+import (
+	"go.uber.org/fx"
+
+	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
+)
 
 var ServiceFxModule = fx.Module(
 	"service",
 	fx.Provide(
 		fx.Annotate(
-			NewDefaultPushService,
-			fx.As(new(PushService)),
+			NewDefaultNotifyService,
+			fx.As(new(NotifyService)),
 		),
 
 		fx.Annotate(
-			NewDefaultLocalService,
-			fx.As(new(LocalService)),
+			NewGrpcSyncCaller,
+			fx.As(new(upstream.SyncCaller)),
 		),
 	),
 )

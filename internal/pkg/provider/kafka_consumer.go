@@ -6,24 +6,28 @@ import (
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
+	"github.com/jrmarcco/xgrpc/register"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-func newKafkaConsumers(factory xconsumer.ConsumerFactory, logger *zap.Logger) (map[string]*gateway.Consumer, error) {
+func newKafkaConsumers(factory xconsumer.ConsumerFactory, si register.ServiceInstance, logger *zap.Logger) (map[string]*gateway.Consumer, error) {
 	consumers := make(map[string]*gateway.Consumer)
 
-	pushMessageConsumer, err := pushMessageConsumer(factory, logger)
+	notifyMessageConsumer, err := notifyMessageConsumer(factory, si, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create push message consumer: %w", err)
+		return nil, fmt.Errorf("failed to create notify message consumer: %w", err)
 	}
-	consumers[gateway.EventPushMessage] = pushMessageConsumer
+	consumers[gateway.EventNotifyMessage] = notifyMessageConsumer
 
-	return consumers, err
+	return consumers, nil
 }
 
-// TODO: 将废弃，改为 grpc 调用
-func pushMessageConsumer(factory xconsumer.ConsumerFactory, logger *zap.Logger) (*gateway.Consumer, error) {
+// notifyMessageConsumer 创建通知 topic 消费者。
+//
+// 通知 topic 为广播消费：每个网关节点独立消费全量，
+// 因此 group_id 需按节点唯一化 ( 配置的 group_id + 本节点服务地址 )。
+func notifyMessageConsumer(factory xconsumer.ConsumerFactory, si register.ServiceInstance, logger *zap.Logger) (*gateway.Consumer, error) {
 	type config struct {
 		Topic         string        `mapstructure:"topic"`
 		GroupID       string        `mapstructure:"group_id"`
@@ -32,13 +36,14 @@ func pushMessageConsumer(factory xconsumer.ConsumerFactory, logger *zap.Logger) 
 	}
 
 	cfg := config{}
-	if err := viper.UnmarshalKey("synp.gateway.consumer.event_message_downstream", &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal push message consumer config: %w", err)
+	if err := viper.UnmarshalKey("synp.gateway.consumer.event_message_notify", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal notify message consumer config: %w", err)
 	}
 
 	return gateway.NewConsumer(
 		cfg.Topic,
-		cfg.GroupID,
+		// 每节点唯一 group id，实现广播消费。
+		fmt.Sprintf("%s-%s", cfg.GroupID, si.Addr),
 		cfg.Partitions,
 		cfg.HandleTimeout,
 

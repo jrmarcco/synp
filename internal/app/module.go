@@ -7,9 +7,7 @@ import (
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
-	"github.com/jrmarcco/xgrpc/register/etcd"
 	"github.com/spf13/viper"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -43,8 +41,7 @@ func newServiceInstance() (register.ServiceInstance, error) {
 type appFxParams struct {
 	fx.In
 
-	EtcdClient *clientv3.Client
-
+	GrpcRegistry        register.Registry
 	GrpcServer          *grpc.Server
 	GrpcServiceInstance register.ServiceInstance
 
@@ -56,9 +53,7 @@ type appFxParams struct {
 
 func startApp(params appFxParams) error {
 	type config struct {
-		KeyPrefix string        `mapstructure:"key_prefix"`
-		LeaseTTL  int           `mapstructure:"lease_ttl"`
-		Timeout   time.Duration `mapstructure:"timeout"`
+		Timeout time.Duration `mapstructure:"timeout"`
 	}
 
 	cfg := config{}
@@ -66,19 +61,11 @@ func startApp(params appFxParams) error {
 		return fmt.Errorf("failed to unmarshal grpc registry config: %w", err)
 	}
 
-	grpcRegistry, err := etcd.NewBuilder(params.EtcdClient).
-		KeyPrefix(cfg.KeyPrefix).
-		LeaseTTL(cfg.LeaseTTL).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create grpc registry: %w", err)
-	}
-
 	app := &app{
 		grpcServer:          params.GrpcServer,
 		grpcServiceInstance: params.GrpcServiceInstance,
 
-		grpcRegistry:        grpcRegistry,
+		grpcRegistry:        params.GrpcRegistry,
 		grpcRegisterTimeout: cfg.Timeout,
 
 		webSocketServer: params.WebSocketServer,

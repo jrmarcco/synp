@@ -60,7 +60,8 @@ func newEtcdClient(logger *zap.Logger, lifecycle fx.Lifecycle) (*clientv3.Client
 		}
 
 		etcdTLSConfig := &tls.Config{
-			MinVersion:         tls.VersionTLS13,
+			MinVersion: tls.VersionTLS13,
+			//nolint:gosec // 跳过证书校验由配置项显式开启，属有意保留的逃生通道 ( 自签名证书的开发环境 )。
 			InsecureSkipVerify: cfg.TLS.InsecureSkipVerify,
 			RootCAs:            caCertPool,
 			Certificates:       []tls.Certificate{clientCert},

@@ -2,6 +2,8 @@ package conn
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -67,6 +69,20 @@ func (dc *DeviceConns) remove(device session.Device) (synp.Conn, bool) {
 	return nil, false
 }
 
+// removeByID 按连接 ID 移除连接，返回被移除的连接对应的设备类型。
+func (dc *DeviceConns) removeByID(connID string) (session.Device, bool) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+
+	for device, conn := range dc.conns {
+		if conn.ID() == connID {
+			delete(dc.conns, device)
+			return device, true
+		}
+	}
+	return "", false
+}
+
 func (dc *DeviceConns) find(device session.Device) (synp.Conn, bool) {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
@@ -112,8 +128,15 @@ type ConnConfig struct {
 
 var _ synp.ConnManager = (*ConnManager)(nil)
 
+// ConnManager 管理网关节点上的全部连接。
+//
+// 连接在建立时身份未知 ( 新协议鉴权在连接建立后的首帧 AUTH 完成 )，
+// 先进入 pending 区；鉴权成功后由 BindUser 绑定到用户索引。
 type ConnManager struct {
 	cfg *ConnConfig
+
+	// pending 保存未完成鉴权的连接 ( connID -> conn )。
+	pending *xsync.Map[string, synp.Conn]
 
 	conns   *xsync.Map[string, *DeviceConns]
 	connCnt atomic.Int64
@@ -142,9 +165,10 @@ func NewConnManager(logger *zap.Logger, opts ...option.Opt[ConnManager]) *ConnMa
 	}
 
 	cm := &ConnManager{
-		cfg:    cfg,
-		conns:  &xsync.Map[string, *DeviceConns]{},
-		logger: logger,
+		cfg:     cfg,
+		pending: &xsync.Map[string, synp.Conn]{},
+		conns:   &xsync.Map[string, *DeviceConns]{},
+		logger:  logger,
 	}
 
 	option.Apply(cm, opts...)
@@ -152,8 +176,33 @@ func NewConnManager(logger *zap.Logger, opts ...option.Opt[ConnManager]) *ConnMa
 	return cm
 }
 
+// NewConn 创建连接。
+// 新协议下连接建立时身份未知，连接先注册到 pending 区，
+// 完成首帧 AUTH 鉴权后由 BindUser 绑定到用户索引。
 func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess session.Session, compressionState *compression.State) (synp.Conn, error) {
-	user := sess.User()
+	// 匿名连接无法从 user 推导 connID，由网关生成全局唯一 ID。
+	connID, err := newConnID()
+	if err != nil {
+		return nil, err
+	}
+
+	opts := m.convertToConnOpts(sess.User(), compressionState)
+	conn := NewConn(ctx, connID, sess, netConn, m.logger, opts...)
+
+	m.pending.Store(connID, conn)
+	m.connCnt.Add(1)
+
+	m.logger.Info(
+		"[conn-manager] successfully create connection",
+		zap.String("conn_id", connID),
+		zap.Any("device", sess.User().Device),
+	)
+	return conn, nil
+}
+
+// BindUser 将完成鉴权的连接绑定到用户索引。
+// 同一用户同一设备已有连接时关闭旧连接 ( 顶号 )。
+func (m *ConnManager) BindUser(conn synp.Conn, user session.User) error {
 	connKey := user.ConnKey()
 	device := user.Device
 
@@ -166,24 +215,19 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 			zap.Any("user", user),
 		)
 
-		// 移除旧连接。
 		_ = m.RemoveConn(user)
 	}
 
-	// 创建新连接。
-	connID := user.ConnID()
-	opts := m.convertToConnOpts(user, compressionState)
-	newConn := NewConn(ctx, connID, sess, netConn, m.logger, opts...)
+	m.storeConn(connKey, device, conn)
+	m.pending.Delete(conn.ID())
 
-	// 存储连接。
-	m.storeConn(connKey, device, newConn)
 	m.logger.Info(
-		"[conn-manager] successfully create connection",
-		zap.String("conn_id", connID),
+		"[conn-manager] successfully bind connection to user",
+		zap.String("conn_id", conn.ID()),
+		zap.String("conn_key", connKey),
 		zap.String("device", string(device)),
-		zap.Any("user", user),
 	)
-	return newConn, nil
+	return nil
 }
 
 func (m *ConnManager) loadExistingConn(key string, device session.Device) (synp.Conn, bool) {
@@ -207,7 +251,6 @@ func (m *ConnManager) storeConn(cid string, device session.Device, conn synp.Con
 		m.userCnt.Add(1)
 	}
 	dc.add(device, conn)
-	m.connCnt.Add(1)
 }
 
 func (m *ConnManager) convertToConnOpts(user session.User, compressionState *compression.State) []option.Opt[Conn] {
@@ -244,6 +287,7 @@ func (m *ConnManager) convertToConnOpts(user session.User, compressionState *com
 	return opts
 }
 
+// RemoveConn 移除并关闭用户指定设备的连接。
 func (m *ConnManager) RemoveConn(user session.User) bool {
 	connKey := user.ConnKey()
 
@@ -290,6 +334,40 @@ func (m *ConnManager) RemoveUserConn(user session.User) bool {
 	return true
 }
 
+// RemoveConnByID 按连接 ID 移除连接，同时覆盖 pending 区与用户索引区。
+// 连接断开的统一清理入口。
+func (m *ConnManager) RemoveConnByID(connID string) bool {
+	removed := false
+
+	if _, ok := m.pending.LoadAndDelete(connID); ok {
+		m.connCnt.Add(-1)
+		removed = true
+	}
+
+	// pending 中不存在则说明已绑定用户，在用户索引区查找。
+	if !removed {
+		var boundKeys []string
+
+		m.conns.Range(func(key string, dc *DeviceConns) bool {
+			if _, ok := dc.removeByID(connID); ok {
+				boundKeys = append(boundKeys, key)
+				m.connCnt.Add(-1)
+
+				if len(dc.conns) == 0 {
+					m.conns.Delete(key)
+					m.userCnt.Add(-1)
+				}
+				return false
+			}
+			return true
+		})
+
+		removed = len(boundKeys) > 0
+	}
+
+	return removed
+}
+
 // FindConn 查找用户单个连接 ( 具体到设备 )。
 func (m *ConnManager) FindConn(user session.User) (synp.Conn, bool) {
 	dc, ok := m.conns.Load(user.ConnKey())
@@ -312,4 +390,13 @@ func (m *ConnManager) FindUserConn(user session.User) ([]synp.Conn, bool) {
 		return nil, false
 	}
 	return dc.findAll()
+}
+
+// newConnID 生成网关内唯一的连接 ID。
+func newConnID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

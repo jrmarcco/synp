@@ -1,6 +1,6 @@
 package gateway
 
 const (
-	EventPushMessage = "push_message"
-	EventScaleUp     = "scale_up"
+	EventNotifyMessage = "notify_message"
+	EventScaleUp       = "scale_up"
 )

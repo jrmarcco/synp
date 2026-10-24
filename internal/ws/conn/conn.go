@@ -28,8 +28,16 @@ var _ synp.Conn = (*Conn)(nil)
 // 同时负责 WebSocket 消息的读写。
 // 读写操作分别由独立的 goroutine 负责。
 type Conn struct {
-	id   string
-	sess session.Session
+	id string
+
+	// sessMu 保护 sess 的替换 ( AUTH 鉴权完成后绑定真实身份 )。
+	sessMu sync.RWMutex
+	sess   session.Session
+
+	// authDone 在首帧 AUTH 鉴权成功后关闭。
+	// 未鉴权连接由网关拒绝处理任何其它指令，超时未鉴权由网关关闭。
+	authOnce sync.Once
+	authDone chan struct{}
 
 	netConn net.Conn
 
@@ -138,8 +146,11 @@ func NewConn(
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	c := &Conn{
-		id:      id,
-		sess:    sess,
+		id:   id,
+		sess: sess,
+
+		authDone: make(chan struct{}),
+
 		netConn: netConn,
 
 		readTimeout:  DefaultReadTiemout,
@@ -236,7 +247,7 @@ func (c *Conn) trySend(payload []byte) bool {
 			zap.String("conn_id", c.id),
 			zap.Int("payload_len", len(payload)),
 			zap.Any("compression_state", c.compressionState),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 
@@ -250,7 +261,7 @@ func (c *Conn) trySend(payload []byte) bool {
 					"[conn] failed to resend message to client, retry reach max",
 					zap.String("conn_id", c.id),
 					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.sess.User()),
+					zap.Any("user", c.Session().User()),
 				)
 				return false
 			}
@@ -302,7 +313,7 @@ func (c *Conn) readLoop() {
 					"[conn] client closed connection",
 					zap.String("conn_id", c.id),
 					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.sess.User()),
+					zap.Any("user", c.Session().User()),
 				)
 				return
 			}
@@ -312,7 +323,7 @@ func (c *Conn) readLoop() {
 				"[conn] failed to read message from client",
 				zap.String("conn_id", c.id),
 				zap.Any("compression_state", c.compressionState),
-				zap.Any("user", c.sess.User()),
+				zap.Any("user", c.Session().User()),
 				zap.Error(err),
 			)
 			return
@@ -331,7 +342,29 @@ func (c *Conn) ID() string {
 }
 
 func (c *Conn) Session() session.Session {
+	c.sessMu.RLock()
+	defer c.sessMu.RUnlock()
 	return c.sess
+}
+
+// BindSession 在首帧 AUTH 鉴权成功后，将匿名 Session 替换为携带真实身份的 Session。
+func (c *Conn) BindSession(sess session.Session) {
+	c.sessMu.Lock()
+	c.sess = sess
+	c.sessMu.Unlock()
+}
+
+// Authenticated 返回鉴权完成信号。
+// channel 关闭表示连接已完成首帧 AUTH 鉴权。
+func (c *Conn) Authenticated() <-chan struct{} {
+	return c.authDone
+}
+
+// MarkAuthenticated 标记连接鉴权完成，重复调用是安全的。
+func (c *Conn) MarkAuthenticated() {
+	c.authOnce.Do(func() {
+		close(c.authDone)
+	})
 }
 
 func (c *Conn) Send(payload []byte) error {
@@ -378,7 +411,7 @@ func (c *Conn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		c.logger.Error(
 			"[conn] failed to close connection",
 			zap.String("conn_id", c.id),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 	}
@@ -406,7 +439,7 @@ func (c *Conn) Close() error {
 		defer cancel()
 		c.closeErr = multierr.Append(
 			c.closeErr,
-			c.sess.Destroy(ctx),
+			c.Session().Destroy(ctx),
 		)
 	})
 	return c.closeErr

@@ -2,10 +2,9 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,11 +16,14 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	wsc "github.com/jrmarcco/synp/internal/ws/conn"
+	"github.com/jrmarcco/synp/internal/ws/conn/lifecycle"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var ErrUnknownReceiver = errors.New("unknown receiver")
+// defaultAuthTimeout 为连接建立后等待首帧 AUTH 的默认超时时间。
+const defaultAuthTimeout = 15 * time.Second
 
 var _ synp.Server = (*Server)(nil)
 
@@ -41,6 +43,10 @@ type Server struct {
 
 	acceptNewConn    atomic.Bool
 	idleScanInterval time.Duration // TODO: 空闲连接扫描间隔 还未配置完成
+
+	// authTimeout 为连接建立后等待首帧 AUTH 的超时时间，
+	// 超时未鉴权的连接由网关关闭。
+	authTimeout time.Duration
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -69,6 +75,8 @@ func NewServer(
 		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略
 
 		consumers: consumers,
+
+		authTimeout: defaultAuthTimeout,
 
 		ctx:        ctx,
 		cancelFunc: cancel,
@@ -182,15 +190,16 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	// 创建、管理连接。
 	// 注意这里的连接指的是 synp.Conn 而不是 net.Conn 接口。
+	// 新协议下连接建立时身份未知 ( 首帧 AUTH 完成鉴权 )，创建的是匿名连接。
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
 		s.logger.Error("[server] failed to create synp connection", zap.Error(err))
 		return
 	}
 
-	user := synpConn.Session().User()
 	defer func() {
-		s.connManager.RemoveConn(user)
+		// 匿名连接与已绑定连接统一按连接 ID 清理。
+		s.connManager.RemoveConnByID(synpConn.ID())
 		if err := synpConn.Close(); err != nil {
 			s.logger.Error(
 				"[server] failed to close synp connection",
@@ -221,6 +230,12 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 	}()
 
+	// 等待首帧 AUTH 超时定时器。
+	// 鉴权完成后停止；超时未鉴权的连接由网关关闭。
+	authTimer := time.NewTimer(s.authTimeout)
+	defer authTimer.Stop()
+	stopAuthTimer := sync.OnceFunc(func() { _ = authTimer.Stop() })
+
 	// 处理收发消息。
 	for {
 		select {
@@ -228,6 +243,14 @@ func (s *Server) handleConn(conn net.Conn) {
 			if !ok {
 				return
 			}
+
+			// 鉴权完成后不再关心 AUTH 超时。
+			select {
+			case <-synpConn.Authenticated():
+				stopAuthTimer()
+			default:
+			}
+
 			if err := s.connHandler.OnReceiveFromFrontend(synpConn, message); err != nil {
 				// 处理前端（业务客户端）发送的消息失败。
 				s.logger.Error(
@@ -240,11 +263,29 @@ func (s *Server) handleConn(conn net.Conn) {
 					return
 				}
 
+				// 鉴权失败或未鉴权连接发送了非法指令，直接关闭连接。
+				if errors.Is(err, lifecycle.ErrNotAuthenticated) {
+					return
+				}
+
 				// TODO:
 				// 如果是消息重复是否需要再发送 ACK 消息？
 				// 还是返回特定的重复错误？
 				// 目前做法是直接忽略消息。
 			}
+		case <-authTimer.C:
+			// 双重检查：鉴权可能刚刚完成。
+			select {
+			case <-synpConn.Authenticated():
+				continue
+			default:
+			}
+
+			s.logger.Info(
+				"[server] close connection because of auth timeout",
+				zap.String("conn_id", synpConn.ID()),
+			)
+			return
 		case <-synpConn.Closed():
 			s.logger.Info("[server] synp connection has been closed")
 			return
@@ -277,14 +318,14 @@ func (s *Server) cleanIdleConn() {
 func (s *Server) initConsumers() error {
 	for key := range s.consumers {
 		switch key {
-		case gateway.EventPushMessage:
+		case gateway.EventNotifyMessage:
 			consumer, ok := s.consumers[key]
 			if !ok {
 				s.logger.Warn("[server] consumer not found", zap.String("event", key))
 				continue
 			}
-			if err := consumer.StartConsumer(s.ctx, s.consumePushMessage); err != nil {
-				s.logger.Error("[server] failed to start push message consumer", zap.Error(err))
+			if err := consumer.StartConsumer(s.ctx, s.consumeNotifyMessage); err != nil {
+				s.logger.Error("[server] failed to start notify message consumer", zap.Error(err))
 				return err
 			}
 		case gateway.EventScaleUp:
@@ -302,31 +343,38 @@ func (s *Server) initConsumers() error {
 	return nil
 }
 
-// consumePushMessage 消费 push message 事件。
-func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
-	pushMsg := &messagev1.PushMessage{}
-	// 后端 ( 业务服务端 ) 推送到消息队列的消息必须使用 json 格式，
-	// 所以直接使用 json 进行解码即可。
-	if err := json.Unmarshal(msg.Val, pushMsg); err != nil {
+// consumeNotifyMessage 消费通知 topic 的 NotifyMessage 事件。
+//
+// 通知 topic 为广播消费：每个网关节点独立消费全量，
+// 按本地连接过滤后下发，节点上无该用户连接时忽略 ( 通知丢失只影响实时性 )。
+func (s *Server) consumeNotifyMessage(_ context.Context, msg *xmq.Message) error {
+	notifyMsg := &messagev1.NotifyMessage{}
+	// 后端 ( 业务服务端 ) 投递到通知 topic 的记录使用 protojson 编码。
+	if err := protojson.Unmarshal(msg.Val, notifyMsg); err != nil {
 		s.logger.Error(
-			"[server] failed to unmarshal push message",
+			"[server] failed to unmarshal notify message",
 			zap.String("message", string(msg.Val)),
 			zap.Error(err),
 		)
 		return err
 	}
 
-	conns, err := s.findConns(pushMsg)
-	if err != nil {
-		s.logger.Error(
-			"[server] failed to find connection for user",
-			zap.String("message", string(msg.Val)),
-			zap.Error(err),
+	conns, ok := s.connManager.FindUserConn(session.User{
+		BID: notifyMsg.GetBusinessId(),
+		UID: notifyMsg.GetReceiverId(),
+	})
+	if !ok {
+		// 本节点无该用户连接，忽略。
+		// 广播模型下其它节点会向其本地连接下发。
+		s.logger.Debug(
+			"[server] receiver not on this node, ignore notify message",
+			zap.Uint64("business_id", notifyMsg.GetBusinessId()),
+			zap.Uint64("receiver_id", notifyMsg.GetReceiverId()),
 		)
-		return err
+		return nil
 	}
 
-	if err = s.connHandler.OnReceiveFromBackend(conns, pushMsg); err != nil {
+	if err := s.connHandler.OnReceiveFromBackend(conns, notifyMsg); err != nil {
 		s.logger.Error(
 			"[server] failed to handle on receive from backend event",
 			zap.String("message", string(msg.Val)),
@@ -335,19 +383,6 @@ func (s *Server) consumePushMessage(_ context.Context, msg *xmq.Message) error {
 		return err
 	}
 	return nil
-}
-
-// findConns 根据下行消息查找对应的连接。
-// msg 是网关接收到的下行消息 ( 由业务服务端推送至网关 )。
-func (s *Server) findConns(msg *messagev1.PushMessage) ([]synp.Conn, error) {
-	conns, ok := s.connManager.FindUserConn(session.User{
-		BID: msg.GetBusinessId(),
-		UID: msg.GetReceiverId(),
-	})
-	if !ok {
-		return nil, fmt.Errorf("%w: user_id=%d", ErrUnknownReceiver, msg.GetReceiverId())
-	}
-	return conns, nil
 }
 
 // consumeScaleUp 消费 scale up 事件。

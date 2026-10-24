@@ -24,8 +24,13 @@ var _ synp.Conn = (*ReadWriteConn)(nil)
 // ReadWriteConn 代表一个 WebSocket 连接，封装了 net.Conn。
 // 使用单个 goroutine 同时负责读写操作。
 type ReadWriteConn struct {
-	id   string
-	sess session.Session
+	id string
+
+	sessMu sync.RWMutex
+	sess   session.Session
+
+	authOnce sync.Once
+	authDone chan struct{}
 
 	netConn net.Conn
 
@@ -71,8 +76,11 @@ func NewReadWriteConn(
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	c := &ReadWriteConn{
-		id:      id,
-		sess:    sess,
+		id:   id,
+		sess: sess,
+
+		authDone: make(chan struct{}),
+
 		netConn: netConn,
 
 		readTimeout:  DefaultReadTiemout,
@@ -146,7 +154,7 @@ func (c *ReadWriteConn) readWriteLoop() {
 					c.logger.Warn(
 						"[read-write-conn] receive channel is full, dropping message",
 						zap.String("conn_id", c.id),
-						zap.Any("user", c.sess.User()),
+						zap.Any("user", c.Session().User()),
 					)
 				}
 			}
@@ -162,7 +170,7 @@ func (c *ReadWriteConn) readWriteLoop() {
 					c.logger.Info(
 						"[read-write-conn] client closed connection",
 						zap.String("conn_id", c.id),
-						zap.Any("user", c.sess.User()),
+						zap.Any("user", c.Session().User()),
 					)
 					return
 				}
@@ -170,7 +178,7 @@ func (c *ReadWriteConn) readWriteLoop() {
 				c.logger.Error(
 					"[read-write-conn] failed to read message from client",
 					zap.String("conn_id", c.id),
-					zap.Any("user", c.sess.User()),
+					zap.Any("user", c.Session().User()),
 					zap.Error(err),
 				)
 				return
@@ -203,7 +211,7 @@ func (c *ReadWriteConn) trySend(payload []byte) bool {
 		c.logger.Error(
 			"[read-write-conn] failed to send message to client",
 			zap.String("conn_id", c.id),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 
@@ -230,7 +238,7 @@ func (c *ReadWriteConn) trySend(payload []byte) bool {
 	c.logger.Error(
 		"[read-write-conn] failed to send message to client, retry reach max",
 		zap.String("conn_id", c.id),
-		zap.Any("user", c.sess.User()),
+		zap.Any("user", c.Session().User()),
 	)
 	return false
 }
@@ -240,7 +248,28 @@ func (c *ReadWriteConn) ID() string {
 }
 
 func (c *ReadWriteConn) Session() session.Session {
+	c.sessMu.RLock()
+	defer c.sessMu.RUnlock()
 	return c.sess
+}
+
+// BindSession 在首帧 AUTH 鉴权成功后，将匿名 Session 替换为携带真实身份的 Session。
+func (c *ReadWriteConn) BindSession(sess session.Session) {
+	c.sessMu.Lock()
+	c.sess = sess
+	c.sessMu.Unlock()
+}
+
+// Authenticated 返回鉴权完成信号。
+func (c *ReadWriteConn) Authenticated() <-chan struct{} {
+	return c.authDone
+}
+
+// MarkAuthenticated 标记连接鉴权完成，重复调用是安全的。
+func (c *ReadWriteConn) MarkAuthenticated() {
+	c.authOnce.Do(func() {
+		close(c.authDone)
+	})
 }
 
 func (c *ReadWriteConn) Send(payload []byte) error {
@@ -287,7 +316,7 @@ func (c *ReadWriteConn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		c.logger.Error(
 			"[conn] failed to close connection",
 			zap.String("conn_id", c.id),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 	}
@@ -315,7 +344,7 @@ func (c *ReadWriteConn) Close() error {
 		defer cancel()
 		c.closeErr = multierr.Append(
 			c.closeErr,
-			c.sess.Destroy(ctx),
+			c.Session().Destroy(ctx),
 		)
 	})
 	return c.closeErr

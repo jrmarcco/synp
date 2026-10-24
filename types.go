@@ -34,6 +34,15 @@ type Conn interface {
 	ID() string
 	Session() session.Session
 
+	// BindSession 在首帧 AUTH 鉴权成功后绑定真实身份。
+	BindSession(sess session.Session)
+
+	// Authenticated 返回鉴权完成信号，channel 关闭表示已完成鉴权。
+	Authenticated() <-chan struct{}
+
+	// MarkAuthenticated 标记连接鉴权完成。
+	MarkAuthenticated()
+
 	Send(payload []byte) error
 	Receive() <-chan []byte
 
@@ -72,8 +81,14 @@ type ConnRegistry interface {
 type ConnManager interface {
 	NewConn(ctx context.Context, netConn net.Conn, sess session.Session, compressionState *compression.State) (Conn, error)
 
+	// BindUser 将完成首帧 AUTH 鉴权的连接绑定到用户索引。
+	BindUser(conn Conn, user session.User) error
+
 	RemoveConn(user session.User) bool
 	RemoveUserConn(user session.User) bool
+
+	// RemoveConnByID 按连接 ID 移除连接，连接断开的统一清理入口。
+	RemoveConnByID(connID string) bool
 
 	FindConn(user session.User) (Conn, bool)
 	FindUserConn(user session.User) ([]Conn, bool)
@@ -87,8 +102,8 @@ type Handler interface {
 	// OnReceiveFromFrontend 收到后端（业务服务端）消息的回调。
 	OnReceiveFromFrontend(conn Conn, payload []byte) error
 
-	// OnReceiveFromBackend 收到前端（业务客户端）消息的回调，通常用于发送消息到后端。
-	OnReceiveFromBackend(conns []Conn, pushMsg *messagev1.PushMessage) error
+	// OnReceiveFromBackend 收到前端（业务客户端）消息的回调，用于向客户端下发 NOTIFY 帧。
+	OnReceiveFromBackend(conns []Conn, notifyMsg *messagev1.NotifyMessage) error
 }
 
 var _ Handler = (*HandlerWrapper)(nil)
@@ -133,10 +148,10 @@ func (w *HandlerWrapper) OnReceiveFromFrontend(conn Conn, payload []byte) error 
 	return err
 }
 
-func (w *HandlerWrapper) OnReceiveFromBackend(conns []Conn, pushMsg *messagev1.PushMessage) error {
+func (w *HandlerWrapper) OnReceiveFromBackend(conns []Conn, notifyMsg *messagev1.NotifyMessage) error {
 	var err error
 	for _, handler := range w.handlers {
-		err = multierr.Append(err, handler.OnReceiveFromBackend(conns, pushMsg))
+		err = multierr.Append(err, handler.OnReceiveFromBackend(conns, notifyMsg))
 	}
 	return err
 }

@@ -1,11 +1,11 @@
 package ws
 
 import (
+	"time"
+
 	"github.com/jrmarcco/synp"
-	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
-	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -25,7 +25,7 @@ var WsFxModule = fx.Module(
 	),
 )
 
-func newWebSocketUpgrader(rdb redis.Cmdable, validator auth.Validator, logger *zap.Logger) (*Upgrader, error) {
+func newWebSocketUpgrader(logger *zap.Logger) (*Upgrader, error) {
 	type config struct {
 		Enabled                 bool `mapstructure:"enabled"`
 		ServerMaxWindowBits     int  `mapstructure:"server_max_window_bits"`
@@ -40,7 +40,7 @@ func newWebSocketUpgrader(rdb redis.Cmdable, validator auth.Validator, logger *z
 		return nil, err
 	}
 
-	return NewUpgrader(rdb, validator, compression.Config{
+	return NewUpgrader(compression.Config{
 		Enabled:                 cfg.Enabled,
 		ServerMaxWindowBits:     cfg.ServerMaxWindowBits,
 		ServerNoContextTakeover: cfg.ServerNoContextTakeover,
@@ -66,6 +66,10 @@ func newWebSocketServer(params serverFxParams) (*Server, error) {
 	type config struct {
 		Host string `mapstructure:"host"`
 		Port int    `mapstructure:"port"`
+
+		// AuthTimeout 为连接建立后等待首帧 AUTH 的超时时间，
+		// 超时未鉴权的连接由网关关闭。
+		AuthTimeout int64 `mapstructure:"auth_timeout_ms"`
 	}
 
 	cfg := config{}
@@ -82,8 +86,14 @@ func newWebSocketServer(params serverFxParams) (*Server, error) {
 		webSocketConfig.Port = cfg.Port
 	}
 
+	authTimeout := time.Duration(cfg.AuthTimeout) * time.Millisecond
+	if authTimeout <= 0 {
+		authTimeout = defaultAuthTimeout
+	}
+
 	webSocketServer := NewServer(
 		webSocketConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
+		ServerWithAuthTimeout(authTimeout),
 	)
 
 	return webSocketServer, nil

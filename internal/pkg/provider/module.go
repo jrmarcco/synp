@@ -3,7 +3,7 @@ package provider
 import (
 	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/message"
-	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
+	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
@@ -16,7 +16,6 @@ var (
 	RedisFxModule           = fx.Module("redis", fx.Provide(newRedisCmdable))
 	CodecFxModule           = fx.Module("codec", fx.Provide(newCodec))
 	MessagePushFuncFxModule = fx.Module("message-push-func", fx.Provide(message.DefaultPushFunc))
-	RetransmitFxModule      = fx.Module("retransmit", fx.Provide(newRetransmitManager))
 )
 
 var (
@@ -63,6 +62,13 @@ var (
 				fx.ResultTags(`group:"upstream-message-handler"`),
 			),
 
+			// 首帧鉴权消息处理器。
+			fx.Annotate(
+				upstream.NewAuthMsgHandler,
+				fx.As(new(upstream.UMsgHandler)),
+				fx.ResultTags(`group:"upstream-message-handler"`),
+			),
+
 			// 前端消息处理器。
 			fx.Annotate(
 				newFrontendMsgHandler,
@@ -70,17 +76,24 @@ var (
 				fx.ResultTags(`group:"upstream-message-handler"`),
 			),
 
-			// 下行消息 ack 处理器。
+			// 收件箱同步消息处理器。
 			fx.Annotate(
-				upstream.NewDownstreamAckHandler,
+				newSyncMsgHandler,
 				fx.As(new(upstream.UMsgHandler)),
 				fx.ResultTags(`group:"upstream-message-handler"`),
 			),
 
-			// 后端消息处理器。
+			// 会话同步消息处理器。
 			fx.Annotate(
-				newBackendMsgHandler,
-				fx.As(new(downstream.DMsgHandler)),
+				newConversationSyncMsgHandler,
+				fx.As(new(upstream.UMsgHandler)),
+				fx.ResultTags(`group:"upstream-message-handler"`),
+			),
+
+			// 后端通知消息处理器。
+			fx.Annotate(
+				newNotifyMsgHandler,
+				fx.As(new(notify.NMsgHandler)),
 			),
 		),
 	)

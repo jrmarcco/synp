@@ -31,8 +31,13 @@ var _ synp.Conn = (*WriteFirstConn)(nil)
 // 与 ReadWriteConn 不同的是，
 // WriteFirstConn 在每次循环时会先批量执行写操作。
 type WriteFirstConn struct {
-	id   string
-	sess session.Session
+	id string
+
+	sessMu sync.RWMutex
+	sess   session.Session
+
+	authOnce sync.Once
+	authDone chan struct{}
 
 	netConn net.Conn
 
@@ -86,8 +91,11 @@ func NewWriteFirstConn(
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	c := &WriteFirstConn{
-		id:      id,
-		sess:    sess,
+		id:   id,
+		sess: sess,
+
+		authDone: make(chan struct{}),
+
 		netConn: netConn,
 
 		readTimeout:  DefaultReadTiemout,
@@ -175,7 +183,7 @@ func (c *WriteFirstConn) writeFirstLoop() {
 				c.logger.Info(
 					"[write-first-conn] client closed connection",
 					zap.String("conn_id", c.id),
-					zap.Any("user", c.sess.User()),
+					zap.Any("user", c.Session().User()),
 				)
 				return
 			}
@@ -220,7 +228,7 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 		c.logger.Error(
 			"[read-write-conn] failed to send message to client",
 			zap.String("conn_id", c.id),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 
@@ -247,7 +255,7 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 	c.logger.Error(
 		"[read-write-conn] failed to send message to client, retry reach max",
 		zap.String("conn_id", c.id),
-		zap.Any("user", c.sess.User()),
+		zap.Any("user", c.Session().User()),
 	)
 	return false
 }
@@ -257,7 +265,28 @@ func (c *WriteFirstConn) ID() string {
 }
 
 func (c *WriteFirstConn) Session() session.Session {
+	c.sessMu.RLock()
+	defer c.sessMu.RUnlock()
 	return c.sess
+}
+
+// BindSession 在首帧 AUTH 鉴权成功后，将匿名 Session 替换为携带真实身份的 Session。
+func (c *WriteFirstConn) BindSession(sess session.Session) {
+	c.sessMu.Lock()
+	c.sess = sess
+	c.sessMu.Unlock()
+}
+
+// Authenticated 返回鉴权完成信号。
+func (c *WriteFirstConn) Authenticated() <-chan struct{} {
+	return c.authDone
+}
+
+// MarkAuthenticated 标记连接鉴权完成，重复调用是安全的。
+func (c *WriteFirstConn) MarkAuthenticated() {
+	c.authOnce.Do(func() {
+		close(c.authDone)
+	})
 }
 
 func (c *WriteFirstConn) Send(payload []byte) error {
@@ -304,7 +333,7 @@ func (c *WriteFirstConn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		c.logger.Error(
 			"[conn] failed to close connection",
 			zap.String("conn_id", c.id),
-			zap.Any("user", c.sess.User()),
+			zap.Any("user", c.Session().User()),
 			zap.Error(err),
 		)
 	}
@@ -332,7 +361,7 @@ func (c *WriteFirstConn) Close() error {
 		defer cancel()
 		c.closeErr = multierr.Append(
 			c.closeErr,
-			c.sess.Destroy(ctx),
+			c.Session().Destroy(ctx),
 		)
 	})
 	return c.closeErr

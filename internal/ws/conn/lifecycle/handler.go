@@ -10,7 +10,7 @@ import (
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	cc "github.com/jrmarcco/synp/internal/pkg/codec"
-	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
+	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -25,6 +25,7 @@ var (
 	ErrMessageDuplicated  = errors.New("message duplicated, ignore it")
 	ErrUnknownMessageType = errors.New("unknown message (command) type")
 	ErrMaxRetryExceeded   = errors.New("max retry exceeded")
+	ErrNotAuthenticated   = errors.New("connection not authenticated")
 )
 
 var _ synp.Handler = (*Handler)(nil)
@@ -38,7 +39,7 @@ type Handler struct {
 
 	codec cc.Codec
 
-	dMsgHandler    downstream.DMsgHandler
+	nMsgHandler    notify.NMsgHandler
 	uMsgHandlerMap map[commonv1.CommandType]upstream.UMsgHandler
 
 	connRegistry synp.ConnRegistry
@@ -51,7 +52,7 @@ func NewHandler(
 	cacheRequestTimeout time.Duration,
 	cacheExpiration time.Duration,
 	codec cc.Codec,
-	dMsgHandler downstream.DMsgHandler,
+	nMsgHandler notify.NMsgHandler,
 	uMsgHandlers []upstream.UMsgHandler,
 	connRegistry synp.ConnRegistry,
 	logger *zap.Logger,
@@ -69,7 +70,7 @@ func NewHandler(
 
 		codec: codec,
 
-		dMsgHandler:    dMsgHandler,
+		nMsgHandler:    nMsgHandler,
 		uMsgHandlerMap: uMsgHandlerMap,
 		connRegistry:   connRegistry,
 
@@ -78,25 +79,11 @@ func NewHandler(
 }
 
 // OnConnect 处理连接建立事件。
+// 注意：路由注册不在连接建立时进行，
+// 而是在首帧 AUTH 鉴权通过后 ( 由 AuthMsgHandler 完成 )。
 func (h *Handler) OnConnect(conn synp.Conn) error {
-	user := conn.Session().User()
-
-	// 注册连接到注册表 ( 用于分布式路由 )。
-	ctx, cancel := context.WithTimeout(context.Background(), defaultRegisterTimeout)
-	defer cancel()
-
-	if err := h.connRegistry.Register(ctx, user); err != nil {
-		h.logger.Error(
-			"[conn-lifecycle-handler] failed to register connection",
-			zap.String("conn_id", conn.ID()),
-			zap.Any("user", user),
-			zap.Error(err),
-		)
-		// 注册失败不影响连接建立，只是分布式路由可能有问题。
-	}
-
 	h.logger.Debug(
-		"[conn-lifecycle-handler] connection connected and registered",
+		"[conn-lifecycle-handler] connection connected, waiting for auth",
 		zap.String("conn_id", conn.ID()),
 	)
 	return nil
@@ -104,6 +91,17 @@ func (h *Handler) OnConnect(conn synp.Conn) error {
 
 // OnDisconnect 处理连接断开事件。
 func (h *Handler) OnDisconnect(conn synp.Conn) error {
+	// 只有完成鉴权的连接才注册过路由，需要注销。
+	select {
+	case <-conn.Authenticated():
+	default:
+		h.logger.Debug(
+			"[conn-lifecycle-handler] anonymous connection disconnected",
+			zap.String("conn_id", conn.ID()),
+		)
+		return conn.Close()
+	}
+
 	user := conn.Session().User()
 
 	// 从注册表中注销连接。
@@ -141,34 +139,48 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		return err
 	}
 
-	// 消息去重 ( 幂等 )。
-	user := conn.Session().User()
-	ok, err := h.cacheMessage(user.BID, user.UID, msg)
-	if err != nil {
-		h.logger.Error(
-			"[conn-lifecycle-handler] failed to cache message",
+	// 鉴权守卫：鉴权完成前网关拒绝处理任何非 AUTH 指令。
+	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH && !h.authenticated(conn) {
+		h.logger.Warn(
+			"[conn-lifecycle-handler] reject message before authentication",
 			zap.String("conn_id", conn.ID()),
-			zap.Any("user", conn.Session().User()),
-			zap.Error(err),
+			zap.Any("command_type", msg.GetCommandType().String()),
 		)
-		return fmt.Errorf("%w: %w", ErrCacheMessage, err)
+		return ErrNotAuthenticated
 	}
 
-	if !ok {
-		h.logger.Warn(
-			"[conn-lifecycle-handler] message duplicated, ignore it",
-			zap.String("conn_id", conn.ID()),
-			zap.String("message_id", msg.GetMessageId()),
-			zap.Any("user", conn.Session().User()),
-		)
-		return ErrMessageDuplicated
+	// 消息去重 ( 幂等 )。
+	// 注意 AUTH 帧不参与去重：重复 AUTH 由 AuthMsgHandler 幂等处理。
+	user := conn.Session().User()
+	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_HEARTBEAT &&
+		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH {
+		ok, cacheErr := h.cacheMessage(user.BID, user.UID, msg)
+		if cacheErr != nil {
+			h.logger.Error(
+				"[conn-lifecycle-handler] failed to cache message",
+				zap.String("conn_id", conn.ID()),
+				zap.Any("user", user),
+				zap.Error(cacheErr),
+			)
+			return fmt.Errorf("%w: %w", ErrCacheMessage, cacheErr)
+		}
+
+		if !ok {
+			h.logger.Warn(
+				"[conn-lifecycle-handler] message duplicated, ignore it",
+				zap.String("conn_id", conn.ID()),
+				zap.String("message_id", msg.GetMessageId()),
+				zap.Any("user", user),
+			)
+			return ErrMessageDuplicated
+		}
 	}
 
 	h.logger.Info(
 		"[conn-lifecycle-handler] received message from frontend",
 		zap.String("conn_id", conn.ID()),
 		zap.String("message", msg.String()),
-		zap.Any("user", conn.Session().User()),
+		zap.Any("user", user),
 	)
 
 	// 处理消息。
@@ -177,7 +189,7 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		h.logger.Error(
 			"[conn-lifecycle-handler] unknown message type from frontend",
 			zap.String("conn_id", conn.ID()),
-			zap.Any("user", conn.Session().User()),
+			zap.Any("user", user),
 		)
 		return ErrUnknownMessageType
 	}
@@ -197,6 +209,15 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		}
 	}
 	return err
+}
+
+func (h *Handler) authenticated(conn synp.Conn) bool {
+	select {
+	case <-conn.Authenticated():
+		return true
+	default:
+		return false
+	}
 }
 
 // decodePayload 解析 payload。
@@ -219,10 +240,6 @@ func (h *Handler) decodePayload(payload []byte) (*messagev1.Message, error) {
 
 // cacheMessage 缓存消息。
 func (h *Handler) cacheMessage(bid, uid uint64, msg *messagev1.Message) (bool, error) {
-	if msg.GetCommandType() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
-		return true, nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), h.cacheRequestTimeout)
 	defer cancel()
 
@@ -240,10 +257,6 @@ func (h *Handler) needUncacheMessage(err error) bool {
 
 // uncacheMessage 删除消息缓存。
 func (h *Handler) uncacheMessage(bid, uid uint64, msg *messagev1.Message) error {
-	if msg.GetCommandType() == commonv1.CommandType_COMMAND_TYPE_HEARTBEAT {
-		return nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), h.cacheRequestTimeout)
 	defer cancel()
 
@@ -258,8 +271,8 @@ func (h *Handler) cacheKey(bid, uid uint64, messageID string) string {
 	return fmt.Sprintf("%d:%d:%s", bid, uid, messageID)
 }
 
-// OnReceiveFromBackend 处理收到后端消息的事件。
-func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.PushMessage) error {
+// OnReceiveFromBackend 处理收到后端通知消息的事件，向客户端下发 NOTIFY 帧。
+func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.NotifyMessage) error {
 	if msg.GetMessageId() == "" {
 		return fmt.Errorf("%w: empty message_id", ErrInvalidMessage)
 	}
@@ -267,5 +280,5 @@ func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.PushMes
 		return fmt.Errorf("%w: empty receiver_id", ErrInvalidMessage)
 	}
 
-	return h.dMsgHandler.Handle(conns, msg)
+	return h.nMsgHandler.Handle(conns, msg)
 }

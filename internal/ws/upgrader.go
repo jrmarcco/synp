@@ -2,9 +2,7 @@ package ws
 
 import (
 	"bytes"
-	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -13,31 +11,21 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsflate"
 	"github.com/jrmarcco/synp"
-	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
 	"github.com/jrmarcco/synp/internal/pkg/session"
-	sr "github.com/jrmarcco/synp/internal/pkg/session/redis"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
-const (
-	AuthorizationHeader = "authorization"
-	AuthorizationPrefix = "bearer"
-)
-
-var (
-	ErrTokenRequired             = errors.New("token is required")
-	ErrInvalidToken              = errors.New("invalid token")
-	ErrInvalidAuthorizationToken = errors.New("invalid Authorization header token")
-)
+var ErrInvalidDeviceType = errors.New("invalid device type")
 
 var _ synp.Upgrader = (*Upgrader)(nil)
 
+// Upgrader 将 HTTP 连接升级为 WebSocket 连接。
+//
+// 注意：鉴权不在升级阶段完成——新协议要求连接建立后的第一帧必须为 AUTH，
+// 携带后端签发的 JWT ( 契约见 api/proto/auth/v1/auth.proto )。
+// 升级阶段只协商压缩扩展并解析设备类型等非敏感参数。
 type Upgrader struct {
-	rdb redis.Cmdable
-
-	validator         auth.Validator
 	compressionConfig compression.Config
 
 	logger *zap.Logger
@@ -58,6 +46,12 @@ func (u *Upgrader) Upgrade(conn net.Conn) (session.Session, *compression.State, 
 	}
 
 	u.finalizeCompressionState(ext, ctx.clientRequestedCompression, &state)
+
+	// 连接建立时身份未知，返回匿名 Session。
+	ctx.sess = session.NewAnonymousSession(session.User{
+		Device:    ctx.device,
+		AutoClose: ctx.autoClose,
+	})
 	return ctx.sess, &state, nil
 }
 
@@ -66,7 +60,7 @@ type upgradeContext struct {
 
 	reqURI []byte
 
-	token                      string
+	device                     session.Device
 	autoClose                  bool
 	clientRequestedCompression bool
 }
@@ -97,7 +91,7 @@ func (u *Upgrader) newWebsocketUpgrader(ext *wsflate.Extension, ctx *upgradeCont
 		OnHeader: func(key, value []byte) error {
 			return u.parseHeader(ctx, key, value)
 		},
-		OnBeforeUpgrade: func() (header ws.HandshakeHeader, err error) {
+		OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
 			return u.beforeUpgrade(ctx)
 		},
 	}
@@ -108,17 +102,14 @@ func (u *Upgrader) newWebsocketUpgrader(ext *wsflate.Extension, ctx *upgradeCont
 // 客户端推荐连接参数：
 //
 //   - 无压缩：
-//     websocat -v \
-//     "wss://gateway.example.com/ws?device=pc" \
-//     --header "Authorization: Bearer <JWT>" \
-//     --header "X-Request-Id: $(uuidgen)"
+//     websocat -v "wss://gateway.example.com/ws?device=pc"
 //
 //   - 启用压缩：
 //     websocat -v \
 //     "wss://gateway.example.com/ws?device=pc" \
-//     --header "Authorization: Bearer <JWT>" \
-//     --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15" \
-//     --header "X-Request-Id: $(uuidgen)"
+//     --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15"
+//
+// 鉴权在连接建立后通过 AUTH 帧完成，连接 URL 不再携带任何凭证。
 func (u *Upgrader) negotiateExtensions(
 	ext *wsflate.Extension,
 	ctx *upgradeContext,
@@ -216,11 +207,6 @@ func (u *Upgrader) negotiateOption(
 }
 
 func (u *Upgrader) parseHeader(ctx *upgradeContext, key, val []byte) error {
-	// 解析 Authorization 头并提取 token。
-	if strings.EqualFold(string(key), AuthorizationHeader) {
-		ctx.token = string(val)
-	}
-
 	// 解析 auto close 参数。
 	if strings.EqualFold(string(key), "x-auto-close") {
 		ctx.autoClose = string(val) == "true"
@@ -254,72 +240,10 @@ func (u *Upgrader) finalizeCompressionState(ext *wsflate.Extension, clientReques
 	}
 }
 
-// beforeUpgrade 在升级前准备用户信息。
+// beforeUpgrade 在升级前解析设备类型等连接参数。
 func (u *Upgrader) beforeUpgrade(ctx *upgradeContext) (ws.HandshakeHeader, error) {
-	user, err := u.prepareUpgradeUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// 构建 session。
-	createdSession, err := u.buildSession(user)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx.sess = createdSession
+	ctx.device = u.extractDevice(ctx.reqURI)
 	return ws.HandshakeHeaderString(""), nil
-}
-
-func (u *Upgrader) prepareUpgradeUser(ctx *upgradeContext) (session.User, error) {
-	// 校验 token 并提取用户信息。
-	user, err := u.extractUser(ctx.reqURI, ctx.token)
-	if err != nil {
-		return session.User{}, err
-	}
-
-	// 设置 auto close 参数。
-	user.AutoClose = ctx.autoClose
-	return user, nil
-}
-
-// getUserInfo 从 Header + URI 中获取用户信息。
-func (u *Upgrader) extractUser(uri []byte, authorization string) (session.User, error) {
-	token, err := u.extractToken(authorization)
-	if err != nil {
-		u.logger.Error("[upgrader] failed to extract token from authorization header", zap.Error(err))
-		return session.User{}, err
-	}
-
-	var user session.User
-	user, err = u.validator.Validate(context.Background(), token)
-	if err != nil {
-		u.logger.Error("[upgrader] failed to validate token", zap.Error(err))
-		return session.User{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
-	}
-
-	// 从 URI 中提取设备类型。
-	device := u.extractDevice(uri)
-	user.Device = device
-
-	return user, nil
-}
-
-// extractToken 从 Header 中提取 token。
-func (u *Upgrader) extractToken(authorization string) (string, error) {
-	parts := strings.Fields(authorization)
-	if len(parts) != 2 { //nolint:mnd // 期望的 Authorization 格式为 "Bearer <token>"
-		return "", ErrTokenRequired
-	}
-
-	if !strings.EqualFold(parts[0], AuthorizationPrefix) {
-		return "", ErrInvalidAuthorizationToken
-	}
-	token := strings.TrimSpace(parts[1])
-	if token == "" {
-		return "", ErrTokenRequired
-	}
-	return token, nil
 }
 
 // extractDevice 从 URI 中提取设备类型。
@@ -348,25 +272,8 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 	}
 }
 
-func (u *Upgrader) buildSession(user session.User) (session.Session, error) {
-	// 初始化 session。
-	sessionBuilder := sr.NewSessionBuilder(u.rdb)
-	createdSession, isNew, err := sessionBuilder.Build(context.Background(), user)
-	if err != nil {
-		return nil, err
-	}
-
-	if !isNew {
-		u.logger.Warn("[upgrader] session already exists", zap.Any("user", user))
-	}
-
-	return createdSession, nil
-}
-
-func NewUpgrader(rdb redis.Cmdable, validator auth.Validator, compressionConfig compression.Config, logger *zap.Logger) *Upgrader {
+func NewUpgrader(compressionConfig compression.Config, logger *zap.Logger) *Upgrader {
 	return &Upgrader{
-		rdb:               rdb,
-		validator:         validator,
 		compressionConfig: compressionConfig,
 		logger:            logger,
 	}

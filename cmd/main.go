@@ -41,8 +41,14 @@ func main() {
 		provider.KafkaConsumerFxModule,
 		provider.KafkaProducerFxModule,
 
-		// 初始化 token validator。
+		// 初始化 gRPC 服务注册器 ( 自身注册与 SyncService 服务发现共享 )。
+		provider.GrpcRegistryFxModule,
+
+		// 初始化 token validator ( RS256 + JWKS )。
 		provider.ValidatorFxModule,
+
+		// 初始化 session builder。
+		provider.SessionBuilderFxModule,
 
 		// 初始化 codec。
 		provider.CodecFxModule,
@@ -50,8 +56,8 @@ func main() {
 		// 初始化 message push func。
 		provider.MessagePushFuncFxModule,
 
-		// 初始化 retransmit manager。
-		provider.RetransmitFxModule,
+		// 初始化到后端 SyncService 的 gRPC 连接。
+		provider.SyncClientFxModule,
 
 		// 初始化 message handler。
 		provider.MessageHandlerFxModule,

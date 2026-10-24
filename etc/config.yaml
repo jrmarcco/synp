@@ -6,6 +6,9 @@ synp:
   websocket:
     host: 0.0.0.0
     port: 10071
+    # 连接建立后等待首帧 AUTH 的超时时间 ( 单位: 毫秒 )，
+    # 超时未鉴权的连接由网关关闭。
+    auth_timeout_ms: 15000
     compression:
       enabled: true
       # 服务端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
@@ -25,6 +28,11 @@ synp:
       key_prefix: synp
       lease_ttl: 30 # 单位：秒 ( 这里和 etcd api 保持一直所以是秒单位 )
       timeout: 10s
+
+  # 后端 SyncService 配置 ( 收件箱与会话的增量同步 )
+  sync_service:
+    service_name: synp-backend
+    insecure: true
 
   # 编解码器配置 ( json / proto )
   codec:
@@ -60,23 +68,27 @@ synp:
     frontend:
       topic: synp.message.upstream
       on_receive_timeout: 3s
+    sync:
+      timeout: 10s
 
   # 网关事件消费者配置
   gateway:
     consumer:
-      # downstream 消息消费者
-      event_message_downstream:
-        topic: synp.message.downstream
-        group_id: synp-downstream-message-consumer
+      # 通知消息消费者 ( 广播消费: group_id 会自动追加本节点地址 )
+      event_message_notify:
+        topic: synp.message.notify
+        group_id: synp-notify-consumer
         partitions: 6
         handle_timeout: 16s
 
+# 连接鉴权 JWT 配置 ( RS256 + JWKS )
 jwt:
-  issuer: hermet-access
-  public: |
-    -----BEGIN PUBLIC KEY-----
-    MCowBQYDK2VwAyEA818wiIDR2aqxvLKcyQL2qvVCYlSs2A/izQi/K109rlU=
-    -----END PUBLIC KEY-----
+  issuer: synp-auth
+  # 受众，固定为网关服务标识，防止为其它用途签发的 token 被重放到网关连接上。
+  audience: synp-gateway
+  # JWKS 端点，公钥定期拉取并缓存，token header 的 kid 用于密钥轮换。
+  jwks_endpoint: http://192.168.3.3:8080/.well-known/jwks.json
+  refresh_interval: 10m
 
 etcd:
   endpoints:

@@ -5,9 +5,8 @@ import (
 	"time"
 
 	"github.com/jrmarcco/synp/internal/pkg/message"
-	"github.com/jrmarcco/synp/internal/pkg/message/downstream"
+	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
-	"github.com/jrmarcco/synp/internal/pkg/retransmit"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
 	"github.com/spf13/viper"
 )
@@ -31,6 +30,32 @@ func newFrontendMsgHandler(producer xproducer.Producer, pushFunc message.PushFun
 	), nil
 }
 
-func newBackendMsgHandler(pushFunc message.PushFunc, retransmitManager *retransmit.Manager) *downstream.BackendMsgHandler {
-	return downstream.NewBackendMsgHandler(pushFunc, retransmitManager)
+func newSyncMsgHandler(syncCaller upstream.SyncCaller, pushFunc message.PushFunc) (*upstream.SyncMsgHandler, error) {
+	type config struct {
+		Timeout time.Duration `mapstructure:"timeout"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.message_handler.sync", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal sync message handler config: %w", err)
+	}
+
+	return upstream.NewSyncMsgHandler(syncCaller, cfg.Timeout, pushFunc), nil
+}
+
+func newConversationSyncMsgHandler(syncCaller upstream.SyncCaller, pushFunc message.PushFunc) (*upstream.ConversationSyncMsgHandler, error) {
+	type config struct {
+		Timeout time.Duration `mapstructure:"timeout"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.message_handler.sync", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal sync message handler config: %w", err)
+	}
+
+	return upstream.NewConversationSyncMsgHandler(syncCaller, cfg.Timeout, pushFunc), nil
+}
+
+func newNotifyMsgHandler(pushFunc message.PushFunc) *notify.NotifyMsgHandler {
+	return notify.NewNotifyMsgHandler(pushFunc)
 }

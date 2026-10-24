@@ -90,34 +90,33 @@ LOGIN_RESPONSE=$(curl -s -X POST "${AUTH_SERVER}/api/v1/auth/sign-in" \
 ACCESS_TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.data.accessToken')
 REQUEST_ID="$(generate_request_id)"
 
+# 新协议: 鉴权不在连接建立时进行 ( URL/Header 不携带凭证 )，
+# 连接建立后的第一帧必须为 AUTH ( body = base64(protojson(AuthPayload{ token })) )。
+AUTH_PAYLOAD=$(printf '{"token":"%s"}' "${ACCESS_TOKEN}")
+AUTH_FRAME=$(printf '{"command_type":"COMMAND_TYPE_AUTH","message_id":"%s","body":"%s"}' \
+  "${REQUEST_ID}" \
+  "$(printf '%s' "${AUTH_PAYLOAD}" | base64 -w0)")
+
 # 客户端推荐连接参数：
 # 	- 无压缩：
-#       websocat -v \
-# 		  "wss://gateway.example.com/ws?device=pc" \
-#   	  --header "Authorization: Bearer <JWT>" \
-#   	  --header "X-Request-Id: $(uuidgen)"
+#       websocat -v "wss://gateway.example.com/ws?device=pc"
 #
 #  - 启用压缩：
 #       websocat -v \
 #   	  "wss://gateway.example.com/ws?device=pc" \
-#   	  --header "Authorization: Bearer <JWT>" \
-#   	  --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15" \
-#   	  --header "X-Request-Id: $(uuidgen)"
+#   	  --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15"
 #       注意:
 #           websocat 工具的 permessage-deflate 兼容性存在问题
 #           需要稳定测试推荐使用无压缩连接
-#           ( permessage-deflate 是 WebSocket 协议中的一个扩展，用于在 WebSocket 连接中启用数据压缩，以提高传输效率和降低带宽使用。 )
-WS_HEADERS=(
-  --header "Authorization: Bearer ${ACCESS_TOKEN}"
-  --header "X-Request-Id: ${REQUEST_ID}"
-)
-
+#           ( permessage-deflate 是 WebSocket 协议中的一个扩展，用于在连接上启用数据压缩，以提高传输效率和降低带宽使用。 )
+WS_HEADERS=()
 if [[ "${ENABLE_COMPRESSION}" == "true" ]]; then
   WS_HEADERS+=(
     --header "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15"
   )
 fi
 
-websocat -v \
+# 连接后发送首帧 AUTH，随后保持交互。
+printf '%s\n' "${AUTH_FRAME}" | websocat -v \
   "${WS_SERVER}?device=pc" \
   "${WS_HEADERS[@]}"
