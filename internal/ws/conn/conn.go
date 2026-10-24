@@ -3,8 +3,10 @@ package conn
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -13,11 +15,11 @@ import (
 	"github.com/jrmarcco/jit/xretry"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xws"
 	"go.uber.org/multierr"
 	"go.uber.org/ratelimit"
-	"go.uber.org/zap"
 )
 
 var ErrConnClosed = errors.New("connection closed")
@@ -39,10 +41,17 @@ type Conn struct {
 	authOnce sync.Once
 	authDone chan struct{}
 
+	// enqueueOverflowCnt 为出站入队连续超时次数，
+	// 用于巡检识别持续无法下发的慢客户端 ( 僵死连接 )。
+	enqueueOverflowCnt atomic.Int32
+
 	netConn net.Conn
 
 	reader      *xws.Reader
 	readTimeout time.Duration
+
+	// establishedReadTimeout 为鉴权完成后的读超时。
+	establishedReadTimeout time.Duration
 
 	writer       *xws.Writer
 	writeTimeout time.Duration
@@ -71,18 +80,30 @@ type Conn struct {
 	limitRate int
 	limiter   ratelimit.Limiter
 
+	// maxFrameBytes 为入站数据帧大小上限。
+	maxFrameBytes int64
+
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
 	closeOnce sync.Once
 	closeErr  error
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func ConnWithReadTimeout(readTimeout time.Duration) option.Opt[Conn] {
 	return func(c *Conn) {
 		c.readTimeout = readTimeout
+	}
+}
+
+// ConnWithEstablishedReadTimeout 设置鉴权完成后的读超时。
+func ConnWithEstablishedReadTimeout(timeout time.Duration) option.Opt[Conn] {
+	return func(c *Conn) {
+		if timeout > 0 {
+			c.establishedReadTimeout = timeout
+		}
 	}
 }
 
@@ -124,6 +145,15 @@ func ConnWithAutoClose(autoClose bool) option.Opt[Conn] {
 	}
 }
 
+// ConnWithMaxFrameBytes 设置入站数据帧大小上限。
+func ConnWithMaxFrameBytes(maxFrameBytes int64) option.Opt[Conn] {
+	return func(c *Conn) {
+		if maxFrameBytes > 0 {
+			c.maxFrameBytes = maxFrameBytes
+		}
+	}
+}
+
 // ConnWithRateLimit 限流器 option。
 // rate 为每秒请求上限。
 func ConnWithRateLimit(rate int) option.Opt[Conn] {
@@ -140,7 +170,6 @@ func NewConn(
 	id string,
 	sess session.Session,
 	netConn net.Conn,
-	logger *zap.Logger,
 	opts ...option.Opt[Conn],
 ) *Conn {
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -153,8 +182,9 @@ func NewConn(
 
 		netConn: netConn,
 
-		readTimeout:  DefaultReadTiemout,
-		writeTimeout: DefaultWriteTiemout,
+		readTimeout:            DefaultReadTiemout,
+		writeTimeout:           DefaultWriteTiemout,
+		establishedReadTimeout: DefaultEstablishedReadTimeout,
 
 		initRetryInterval: DefaultInitRetryInterval,
 		maxRetryInterval:  DefaultMaxRetryInterval,
@@ -168,19 +198,25 @@ func NewConn(
 		ctx:        ctx,
 		cancelFunc: cancel,
 
-		logger: logger,
+		logger: logging.For("conn"),
 	}
 
 	option.Apply(c, opts...)
 
 	// 在 option 应用之后才能确定 compressionState。
 	// 所以只能在这里初始化 writer 和 reader。
-	var compressionEnabled bool
+	var (
+		compressionEnabled bool
+		compressLevel      int
+		minCompressSize    int
+	)
 	if c.compressionState != nil {
 		compressionEnabled = c.compressionState.Enabled
+		compressLevel = c.compressionState.Level
+		minCompressSize = c.compressionState.MinCompressSize
 	}
-	c.reader = xws.NewServerSideReader(netConn)
-	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled)
+	c.reader = xws.NewServerSideReader(netConn, c.maxFrameBytes)
+	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled, compressLevel, minCompressSize)
 
 	// 启动收发数据的 goroutine。
 	//nolint:contextcheck // writeLoop 内部使用 c.ctx。
@@ -244,11 +280,11 @@ func (c *Conn) trySend(payload []byte) bool {
 
 		c.logger.Error(
 			"[conn] failed to send message to client",
-			zap.String("conn_id", c.id),
-			zap.Int("payload_len", len(payload)),
-			zap.Any("compression_state", c.compressionState),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"payload_len", len(payload),
+			"compression_state", c.compressionState,
+			"user", c.Session().User(),
+			"error", err,
 		)
 
 		// 检查错误，如果是超时错误则允许重试。
@@ -259,9 +295,9 @@ func (c *Conn) trySend(payload []byte) bool {
 				// 重试达到上限。
 				c.logger.Error(
 					"[conn] failed to resend message to client, retry reach max",
-					zap.String("conn_id", c.id),
-					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.Session().User()),
+					"conn_id", c.id,
+					"compression_state", c.compressionState,
+					"user", c.Session().User(),
 				)
 				return false
 			}
@@ -296,8 +332,16 @@ func (c *Conn) readLoop() {
 		default:
 		}
 
-		// 设置读超时。
-		_ = c.netConn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		// 设置读超时: 鉴权前短超时 ( AUTH 超时兜底 )，鉴权后长超时。
+		readTimeout := c.readTimeout
+		select {
+		case <-c.authDone:
+			if c.establishedReadTimeout > 0 {
+				readTimeout = c.establishedReadTimeout
+			}
+		default:
+		}
+		_ = c.netConn.SetReadDeadline(time.Now().Add(readTimeout))
 
 		payload, err := c.reader.Read()
 		if err != nil {
@@ -311,9 +355,9 @@ func (c *Conn) readLoop() {
 				// 客户端关闭连接，记录日志直接返回。
 				c.logger.Debug(
 					"[conn] client closed connection",
-					zap.String("conn_id", c.id),
-					zap.Any("compression_state", c.compressionState),
-					zap.Any("user", c.Session().User()),
+					"conn_id", c.id,
+					"compression_state", c.compressionState,
+					"user", c.Session().User(),
 				)
 				return
 			}
@@ -321,10 +365,10 @@ func (c *Conn) readLoop() {
 			// 其他错误，直接返回。
 			c.logger.Error(
 				"[conn] failed to read message from client",
-				zap.String("conn_id", c.id),
-				zap.Any("compression_state", c.compressionState),
-				zap.Any("user", c.Session().User()),
-				zap.Error(err),
+				"conn_id", c.id,
+				"compression_state", c.compressionState,
+				"user", c.Session().User(),
+				"error", err,
 			)
 			return
 		}
@@ -361,22 +405,48 @@ func (c *Conn) Authenticated() <-chan struct{} {
 }
 
 // MarkAuthenticated 标记连接鉴权完成，重复调用是安全的。
+// 鉴权完成后立即把读超时切换为长超时，
+// 避免空闲连接在每个短超时周期被无效唤醒。
 func (c *Conn) MarkAuthenticated() {
 	c.authOnce.Do(func() {
 		close(c.authDone)
+
+		if c.establishedReadTimeout > 0 {
+			_ = c.netConn.SetReadDeadline(time.Now().Add(c.establishedReadTimeout))
+		}
 	})
 }
 
-func (c *Conn) Send(payload []byte) error {
+func (c *Conn) Send(ctx context.Context, payload []byte) error {
 	select {
 	case <-c.ctx.Done():
 		return ErrConnClosed
 	case c.sendChan <- payload:
+		c.enqueueOverflowCnt.Store(0)
+
 		if c.ctx.Err() != nil {
 			return ErrConnClosed
 		}
 		return nil
+	case <-ctx.Done():
+		// 入队超时计为一次慢客户端证据，由巡检决定断开。
+		c.enqueueOverflowCnt.Add(1)
+		return synp.ErrSendEnqueueTimeout
 	}
+}
+
+// TryCloseIfSlow 出站入队连续超时达到 minOverflow 时关闭连接 ( 慢客户端隔离 )。
+func (c *Conn) TryCloseIfSlow(minOverflow int32) bool {
+	if c.enqueueOverflowCnt.Load() < minOverflow {
+		return false
+	}
+
+	c.logger.Warn(
+		"[conn] close slow client because of continuous enqueue overflow",
+		"conn_id", c.id,
+		"overflow_cnt", c.enqueueOverflowCnt.Load(),
+	)
+	return c.Close() == nil
 }
 
 func (c *Conn) Receive() <-chan []byte {
@@ -410,9 +480,9 @@ func (c *Conn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		// 关闭直白只记录日志。
 		c.logger.Error(
 			"[conn] failed to close connection",
-			zap.String("conn_id", c.id),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"user", c.Session().User(),
+			"error", err,
 		)
 	}
 	return true

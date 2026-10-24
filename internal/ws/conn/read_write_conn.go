@@ -3,6 +3,7 @@ package conn
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -13,10 +14,10 @@ import (
 	"github.com/jrmarcco/jit/xretry"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xws"
 	"go.uber.org/multierr"
-	"go.uber.org/zap"
 )
 
 var _ synp.Conn = (*ReadWriteConn)(nil)
@@ -62,7 +63,7 @@ type ReadWriteConn struct {
 	closeOnce sync.Once
 	closeErr  error
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewReadWriteConn(
@@ -70,7 +71,6 @@ func NewReadWriteConn(
 	id string,
 	sess session.Session,
 	netConn net.Conn,
-	logger *zap.Logger,
 	opts ...option.Opt[ReadWriteConn],
 ) *ReadWriteConn {
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -98,7 +98,7 @@ func NewReadWriteConn(
 		ctx:        ctx,
 		cancelFunc: cancel,
 
-		logger: logger,
+		logger: logging.For("read-write-conn"),
 	}
 
 	option.Apply(c, opts...)
@@ -107,8 +107,8 @@ func NewReadWriteConn(
 	if c.compressionState != nil {
 		compressionEnabled = c.compressionState.Enabled
 	}
-	c.reader = xws.NewServerSideReader(netConn)
-	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled)
+	c.reader = xws.NewServerSideReader(netConn, 0)
+	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled, 0, 0)
 
 	//nolint:contextcheck // readWriteLoop 内部使用 c.ctx。
 	go c.readWriteLoop()
@@ -153,8 +153,8 @@ func (c *ReadWriteConn) readWriteLoop() {
 					// 注意：丢弃数据是必要的反压保护。
 					c.logger.Warn(
 						"[read-write-conn] receive channel is full, dropping message",
-						zap.String("conn_id", c.id),
-						zap.Any("user", c.Session().User()),
+						"conn_id", c.id,
+						"user", c.Session().User(),
 					)
 				}
 			}
@@ -169,17 +169,17 @@ func (c *ReadWriteConn) readWriteLoop() {
 				if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd) || (wsErr.Code == ws.StatusGoingAway) {
 					c.logger.Info(
 						"[read-write-conn] client closed connection",
-						zap.String("conn_id", c.id),
-						zap.Any("user", c.Session().User()),
+						"conn_id", c.id,
+						"user", c.Session().User(),
 					)
 					return
 				}
 
 				c.logger.Error(
 					"[read-write-conn] failed to read message from client",
-					zap.String("conn_id", c.id),
-					zap.Any("user", c.Session().User()),
-					zap.Error(err),
+					"conn_id", c.id,
+					"user", c.Session().User(),
+					"error", err,
 				)
 				return
 			}
@@ -210,9 +210,9 @@ func (c *ReadWriteConn) trySend(payload []byte) bool {
 
 		c.logger.Error(
 			"[read-write-conn] failed to send message to client",
-			zap.String("conn_id", c.id),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"user", c.Session().User(),
+			"error", err,
 		)
 
 		var netErr net.Error
@@ -237,8 +237,8 @@ func (c *ReadWriteConn) trySend(payload []byte) bool {
 	// 重试达到上限。
 	c.logger.Error(
 		"[read-write-conn] failed to send message to client, retry reach max",
-		zap.String("conn_id", c.id),
-		zap.Any("user", c.Session().User()),
+		"conn_id", c.id,
+		"user", c.Session().User(),
 	)
 	return false
 }
@@ -272,7 +272,7 @@ func (c *ReadWriteConn) MarkAuthenticated() {
 	})
 }
 
-func (c *ReadWriteConn) Send(payload []byte) error {
+func (c *ReadWriteConn) Send(ctx context.Context, payload []byte) error {
 	select {
 	case <-c.ctx.Done():
 		return ErrConnClosed
@@ -281,6 +281,8 @@ func (c *ReadWriteConn) Send(payload []byte) error {
 			return ErrConnClosed
 		}
 		return nil
+	case <-ctx.Done():
+		return synp.ErrSendEnqueueTimeout
 	}
 }
 
@@ -315,12 +317,17 @@ func (c *ReadWriteConn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		// 关闭直白只记录日志。
 		c.logger.Error(
 			"[conn] failed to close connection",
-			zap.String("conn_id", c.id),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"user", c.Session().User(),
+			"error", err,
 		)
 	}
 	return true
+}
+
+// TryCloseIfSlow 未启用 ( 实验连接类型，无入队超时计数 )。
+func (c *ReadWriteConn) TryCloseIfSlow(_ int32) bool {
+	return false
 }
 
 func (c *ReadWriteConn) Close() error {

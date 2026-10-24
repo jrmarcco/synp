@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log/slog"
 	"sync"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/segmentio/kafka-go"
@@ -109,7 +110,7 @@ func (c *KafkaConsumer) readMessage() {
 			if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				return
 			}
-			slog.Warn("[xmq-consumer] failed to read message from kafka", "err", err.Error())
+			logging.For("xmq.consumer").Warn("[xmq-consumer] failed to read message from kafka", "err", err.Error())
 			continue
 		}
 

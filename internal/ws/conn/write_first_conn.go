@@ -3,6 +3,7 @@ package conn
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -13,10 +14,10 @@ import (
 	"github.com/jrmarcco/jit/xretry"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xws"
 	"go.uber.org/multierr"
-	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -72,7 +73,7 @@ type WriteFirstConn struct {
 	closeOnce sync.Once
 	closeErr  error
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewWriteFirstConn(
@@ -81,7 +82,6 @@ func NewWriteFirstConn(
 	sess session.Session,
 	netConn net.Conn,
 	limitRate int,
-	logger *zap.Logger,
 	opts ...option.Opt[WriteFirstConn],
 ) (*WriteFirstConn, error) {
 	if limitRate <= 0 {
@@ -115,7 +115,7 @@ func NewWriteFirstConn(
 		ctx:        ctx,
 		cancelFunc: cancel,
 
-		logger: logger,
+		logger: logging.For("write-first-conn"),
 	}
 
 	option.Apply(c, opts...)
@@ -124,8 +124,8 @@ func NewWriteFirstConn(
 	if c.compressionState != nil {
 		compressionEnabled = c.compressionState.Enabled
 	}
-	c.reader = xws.NewServerSideReader(netConn)
-	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled)
+	c.reader = xws.NewServerSideReader(netConn, 0)
+	c.writer = xws.NewServerSideWriter(netConn, compressionEnabled, 0, 0)
 
 	//nolint:contextcheck // readWriteLoop 内部使用 c.ctx。
 	go c.writeFirstLoop()
@@ -182,16 +182,16 @@ func (c *WriteFirstConn) writeFirstLoop() {
 			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd) || (wsErr.Code == ws.StatusGoingAway) {
 				c.logger.Info(
 					"[write-first-conn] client closed connection",
-					zap.String("conn_id", c.id),
-					zap.Any("user", c.Session().User()),
+					"conn_id", c.id,
+					"user", c.Session().User(),
 				)
 				return
 			}
 
 			c.logger.Error(
 				"[write-first-conn] failed to read message from client",
-				zap.String("conn_id", c.id),
-				zap.Error(err),
+				"conn_id", c.id,
+				"error", err,
 			)
 			return
 		}
@@ -227,9 +227,9 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 
 		c.logger.Error(
 			"[read-write-conn] failed to send message to client",
-			zap.String("conn_id", c.id),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"user", c.Session().User(),
+			"error", err,
 		)
 
 		var netErr net.Error
@@ -254,8 +254,8 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 	// 重试达到上限。
 	c.logger.Error(
 		"[read-write-conn] failed to send message to client, retry reach max",
-		zap.String("conn_id", c.id),
-		zap.Any("user", c.Session().User()),
+		"conn_id", c.id,
+		"user", c.Session().User(),
 	)
 	return false
 }
@@ -289,7 +289,7 @@ func (c *WriteFirstConn) MarkAuthenticated() {
 	})
 }
 
-func (c *WriteFirstConn) Send(payload []byte) error {
+func (c *WriteFirstConn) Send(ctx context.Context, payload []byte) error {
 	select {
 	case <-c.ctx.Done():
 		return ErrConnClosed
@@ -298,6 +298,8 @@ func (c *WriteFirstConn) Send(payload []byte) error {
 			return ErrConnClosed
 		}
 		return nil
+	case <-ctx.Done():
+		return synp.ErrSendEnqueueTimeout
 	}
 }
 
@@ -332,12 +334,17 @@ func (c *WriteFirstConn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 		// 关闭直白只记录日志。
 		c.logger.Error(
 			"[conn] failed to close connection",
-			zap.String("conn_id", c.id),
-			zap.Any("user", c.Session().User()),
-			zap.Error(err),
+			"conn_id", c.id,
+			"user", c.Session().User(),
+			"error", err,
 		)
 	}
 	return true
+}
+
+// TryCloseIfSlow 未启用 ( 实验连接类型，无入队超时计数 )。
+func (c *WriteFirstConn) TryCloseIfSlow(_ int32) bool {
+	return false
 }
 
 func (c *WriteFirstConn) Close() error {

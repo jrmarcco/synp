@@ -2,7 +2,8 @@ package xproducer
 
 import (
 	"context"
-	"log/slog"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/segmentio/kafka-go"
 
@@ -31,7 +32,7 @@ func (p *KafkaProducer) Produce(ctx context.Context, msg *xmq.Message) error {
 		return err
 	}
 
-	slog.Debug(
+	logging.For("xmq.producer").Debug(
 		"[xmq-producer] successfully produced message to kafka",
 		"topic", msg.Topic,
 		"offset", msg.Offset,

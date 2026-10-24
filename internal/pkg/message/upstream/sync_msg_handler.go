@@ -3,13 +3,15 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/message"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -44,9 +46,12 @@ func NewSyncMsgHandler(syncCaller SyncCaller, syncTimeout time.Duration, pushFun
 func (h *SyncMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	conn.UpdateActivityTime()
 
+	replyCtx, replyCancel := replyCtx()
+	defer replyCancel()
+
 	frame := &messagev1.SyncFrame{}
 	if err := protojson.Unmarshal(msg.GetBody(), frame); err != nil {
-		return h.replySyncAck(conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
+		return h.replySyncAck(replyCtx, conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
 			IsSuccess:    false,
 			ErrorMessage: fmt.Sprintf("invalid sync frame: %v", err),
 		})
@@ -58,6 +63,7 @@ func (h *SyncMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	ctx, cancel := context.WithTimeout(context.Background(), h.syncTimeout)
 	defer cancel()
 
+	start := time.Now()
 	resp, err := h.syncCaller.Sync(ctx, &messagev1.SyncRequest{
 		BusinessId: user.BID,
 		UserId:     user.UID,
@@ -65,31 +71,33 @@ func (h *SyncMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 		Cursor: frame.GetCursor(),
 		Limit:  frame.GetLimit(),
 	})
+	metrics.SyncCallDuration.Observe(time.Since(start).Seconds())
+
 	if err != nil {
-		slog.Error(
+		logging.For("sync-msg-handler").Error(
 			"[sync-msg-handler] failed to call sync service",
 			"conn_id", conn.ID(),
 			"error", err,
 		)
-		return h.replySyncAck(conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
+		return h.replySyncAck(replyCtx, conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
 			IsSuccess:    false,
 			ErrorMessage: fmt.Sprintf("failed to sync: %v", err),
 		})
 	}
 
-	return h.replySyncAck(conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
+	return h.replySyncAck(replyCtx, conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
 		IsSuccess: true,
 		Response:  resp,
 	})
 }
 
-func (h *SyncMsgHandler) replySyncAck(conn synp.Conn, messageID string, payload *messagev1.SyncAckPayload) error {
+func (h *SyncMsgHandler) replySyncAck(ctx context.Context, conn synp.Conn, messageID string, payload *messagev1.SyncAckPayload) error {
 	body, err := protojson.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sync ack payload: %w", err)
 	}
 
-	return h.pushFunc(conn, &messagev1.Message{
+	return h.pushFunc(ctx, conn, &messagev1.Message{
 		CommandType: commonv1.CommandType_COMMAND_TYPE_SYNC_ACK,
 		MessageId:   messageID,
 		Body:        body,

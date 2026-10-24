@@ -5,6 +5,7 @@ import (
 
 	"github.com/jrmarcco/synp/internal/api"
 	"github.com/jrmarcco/synp/internal/app"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/provider"
 	"github.com/jrmarcco/synp/internal/service"
 	"github.com/jrmarcco/synp/internal/ws"
@@ -14,7 +15,6 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -22,13 +22,18 @@ func main() {
 		panic(err)
 	}
 
+	// 日志装配必须先于 fx：fx 的事件日志在装配最早期求值。
+	cleanupLogging := provider.SetupLogging()
+	defer cleanupLogging()
+
 	fx.New(
-		fx.WithLogger(func(logger *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: logger}
+		// fx 事件日志与业务日志共用同一条 slog 管道。
+		fx.WithLogger(func() fxevent.Logger {
+			return &fxevent.SlogLogger{Logger: logging.For("fx")}
 		}),
 
-		// 初始化 zap.Logger。
-		provider.ZapLoggerFxModule,
+		// 运维管理端口 ( /metrics + /debug/pprof )。
+		provider.AdminFxModule,
 
 		// 初始化 etcd。
 		provider.EtcdFxModule,

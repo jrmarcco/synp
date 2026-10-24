@@ -5,10 +5,10 @@ import (
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
+	"github.com/jrmarcco/synp/internal/pkg/limiter"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 var WsFxModule = fx.Module(
@@ -25,7 +25,7 @@ var WsFxModule = fx.Module(
 	),
 )
 
-func newWebSocketUpgrader(logger *zap.Logger) (*Upgrader, error) {
+func newWebSocketUpgrader() (*Upgrader, error) {
 	type config struct {
 		Enabled                 bool `mapstructure:"enabled"`
 		ServerMaxWindowBits     int  `mapstructure:"server_max_window_bits"`
@@ -33,6 +33,8 @@ func newWebSocketUpgrader(logger *zap.Logger) (*Upgrader, error) {
 		ClientMaxWindowBits     int  `mapstructure:"client_max_window_bits"`
 		ClientNoContextTakeover bool `mapstructure:"client_no_context_takeover"`
 		Level                   int  `mapstructure:"level"`
+
+		MinCompressSize int `mapstructure:"min_compress_size"`
 	}
 
 	cfg := config{}
@@ -47,7 +49,8 @@ func newWebSocketUpgrader(logger *zap.Logger) (*Upgrader, error) {
 		ClientMaxWindowBits:     cfg.ClientMaxWindowBits,
 		ClientNoContextTakeover: cfg.ClientNoContextTakeover,
 		Level:                   cfg.Level,
-	}, logger), nil
+		MinCompressSize:         cfg.MinCompressSize,
+	}), nil
 }
 
 type serverFxParams struct {
@@ -58,8 +61,6 @@ type serverFxParams struct {
 	ConnHandler synp.Handler
 
 	Consumers map[string]*gateway.Consumer
-
-	Logger *zap.Logger
 }
 
 func newWebSocketServer(params serverFxParams) (*Server, error) {
@@ -70,6 +71,16 @@ func newWebSocketServer(params serverFxParams) (*Server, error) {
 		// AuthTimeout 为连接建立后等待首帧 AUTH 的超时时间，
 		// 超时未鉴权的连接由网关关闭。
 		AuthTimeout int64 `mapstructure:"auth_timeout_ms"`
+
+		// MaxConnections 为最大并发连接数 ( 0 使用默认值 )。
+		MaxConnections int64 `mapstructure:"max_connections"`
+
+		// IdleScanInterval / IdleTimeout 为空闲连接扫描参数。
+		IdleScanInterval time.Duration `mapstructure:"idle_scan_interval"`
+		IdleTimeout      time.Duration `mapstructure:"idle_timeout"`
+
+		// DrainTimeout 为优雅关闭时等待存量连接排空的超时时间。
+		DrainTimeout time.Duration `mapstructure:"shutdown_drain_timeout"`
 	}
 
 	cfg := config{}
@@ -86,14 +97,12 @@ func newWebSocketServer(params serverFxParams) (*Server, error) {
 		webSocketConfig.Port = cfg.Port
 	}
 
-	authTimeout := time.Duration(cfg.AuthTimeout) * time.Millisecond
-	if authTimeout <= 0 {
-		authTimeout = defaultAuthTimeout
-	}
-
 	webSocketServer := NewServer(
-		webSocketConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers, params.Logger,
-		ServerWithAuthTimeout(authTimeout),
+		webSocketConfig, params.Upgrader, params.ConnHandler, params.ConnManager, params.Consumers,
+		ServerWithConnLimiter(limiter.NewConnLimiter(cfg.MaxConnections)),
+		ServerWithAuthTimeout(time.Duration(cfg.AuthTimeout)*time.Millisecond),
+		ServerWithIdleScan(cfg.IdleScanInterval, cfg.IdleTimeout),
+		ServerWithDrainTimeout(cfg.DrainTimeout),
 	)
 
 	return webSocketServer, nil

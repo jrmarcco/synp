@@ -8,7 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 var ConnFxModule = fx.Module(
@@ -27,7 +26,7 @@ var ConnFxModule = fx.Module(
 	),
 )
 
-func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance, logger *zap.Logger) (*ConnRegistry, error) {
+func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance) (*ConnRegistry, error) {
 	type config struct {
 		KeyPrefix string        `mapstructure:"key_prefix"`
 		TTL       time.Duration `mapstructure:"ttl"`
@@ -44,16 +43,17 @@ func newConnRegistry(rdb redis.Cmdable, si register.ServiceInstance, logger *zap
 			ServiceName: si.Name,
 			ServiceAddr: si.Addr,
 		},
-		logger,
 		ConnRegistryWithTTL(cfg.TTL),
 		ConnRegistryWithKeyPrefix(cfg.KeyPrefix),
 	), nil
 }
 
-func newConnManager(zapLogger *zap.Logger) (*ConnManager, error) {
+func newConnManager() (*ConnManager, error) {
 	type config = struct {
 		ReadTimeout  time.Duration `mapstructure:"read_timeout"`
 		WriteTimeout time.Duration `mapstructure:"write_timeout"`
+
+		EstablishedReadTimeout time.Duration `mapstructure:"established_read_timeout"`
 
 		InitRetryInterval time.Duration `mapstructure:"init_retry_interval"`
 		MaxRetryInterval  time.Duration `mapstructure:"max_retry_interval"`
@@ -64,6 +64,8 @@ func newConnManager(zapLogger *zap.Logger) (*ConnManager, error) {
 
 		CloseTimeout time.Duration `mapstructure:"close_timeout"`
 		RateLimit    int           `mapstructure:"rate_limit"`
+
+		MaxFrameBytes int64 `mapstructure:"max_message_bytes"`
 	}
 
 	cfg := config{}
@@ -71,15 +73,17 @@ func newConnManager(zapLogger *zap.Logger) (*ConnManager, error) {
 		return nil, err
 	}
 
-	return NewConnManager(zapLogger, ConnManagerWithConfig(&ConnConfig{
-		ReadTimeout:       cfg.ReadTimeout,
-		WriteTimeout:      cfg.WriteTimeout,
-		InitRetryInterval: cfg.InitRetryInterval,
-		MaxRetryInterval:  cfg.MaxRetryInterval,
-		MaxRetryCount:     cfg.MaxRetryCount,
-		SendBufferSize:    cfg.SendBufferSize,
-		ReceiveBufferSize: cfg.ReceiveBufferSize,
-		CloseTimeout:      cfg.CloseTimeout,
-		RateLimit:         cfg.RateLimit,
+	return NewConnManager(ConnManagerWithConfig(&ConnConfig{
+		ReadTimeout:            cfg.ReadTimeout,
+		WriteTimeout:           cfg.WriteTimeout,
+		EstablishedReadTimeout: cfg.EstablishedReadTimeout,
+		InitRetryInterval:      cfg.InitRetryInterval,
+		MaxRetryInterval:       cfg.MaxRetryInterval,
+		MaxRetryCount:          cfg.MaxRetryCount,
+		SendBufferSize:         cfg.SendBufferSize,
+		ReceiveBufferSize:      cfg.ReceiveBufferSize,
+		CloseTimeout:           cfg.CloseTimeout,
+		RateLimit:              cfg.RateLimit,
+		MaxFrameBytes:          cfg.MaxFrameBytes,
 	})), nil
 }

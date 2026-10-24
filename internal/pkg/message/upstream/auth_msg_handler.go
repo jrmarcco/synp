@@ -3,14 +3,16 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/auth"
 	"github.com/jrmarcco/synp/internal/pkg/message"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -53,33 +55,40 @@ func NewAuthMsgHandler(
 func (h *AuthMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	conn.UpdateActivityTime()
 
+	start := time.Now()
+	defer func() {
+		metrics.AuthDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	// 重复 AUTH 帧幂等处理：已鉴权的连接直接回成功。
 	select {
 	case <-conn.Authenticated():
-		return h.replyAuthAck(conn, msg.GetMessageId(), true, "")
+		ctx, cancel := replyCtx()
+		defer cancel()
+		return h.replyAuthAck(ctx, conn, msg.GetMessageId(), true, "")
 	default:
 	}
 
 	payload := &messagev1.AuthPayload{}
 	if err := protojson.Unmarshal(msg.GetBody(), payload); err != nil {
-		slog.Error(
+		logging.For("auth-msg-handler").Error(
 			"[auth-msg-handler] failed to unmarshal auth payload",
 			"conn_id", conn.ID(),
 			"error", err,
 		)
 		// 失败路径上的应答发送是尽力而为，随后连接即被关闭。
-		_ = h.replyAuthAck(conn, msg.GetMessageId(), false, fmt.Sprintf("invalid auth payload: %v", err))
+		h.replyAuthAckBestEffort(conn, msg.GetMessageId(), fmt.Sprintf("invalid auth payload: %v", err))
 		return conn.Close()
 	}
 
 	user, err := h.validator.Validate(context.Background(), payload.GetToken())
 	if err != nil {
-		slog.Warn(
+		logging.For("auth-msg-handler").Warn(
 			"[auth-msg-handler] failed to validate token",
 			"conn_id", conn.ID(),
 			"error", err,
 		)
-		_ = h.replyAuthAck(conn, msg.GetMessageId(), false, fmt.Sprintf("invalid token: %v", err))
+		h.replyAuthAckBestEffort(conn, msg.GetMessageId(), fmt.Sprintf("invalid token: %v", err))
 		// 鉴权失败：发送应答后关闭连接。
 		return conn.Close()
 	}
@@ -90,25 +99,27 @@ func (h *AuthMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 	user.AutoClose = anonymousUser.AutoClose
 
 	if err = h.bindIdentity(conn, user); err != nil {
-		slog.Error(
+		logging.For("auth-msg-handler").Error(
 			"[auth-msg-handler] failed to bind identity",
 			"conn_id", conn.ID(),
 			"error", err,
 		)
-		_ = h.replyAuthAck(conn, msg.GetMessageId(), false, "internal error")
+		h.replyAuthAckBestEffort(conn, msg.GetMessageId(), "internal error")
 		return conn.Close()
 	}
 
 	conn.MarkAuthenticated()
 
-	slog.Info(
+	logging.For("auth-msg-handler").Info(
 		"[auth-msg-handler] connection authenticated",
 		"conn_id", conn.ID(),
 		"business_id", user.BID,
 		"user_id", user.UID,
 	)
 
-	return h.replyAuthAck(conn, msg.GetMessageId(), true, "")
+	ctx, cancel := replyCtx()
+	defer cancel()
+	return h.replyAuthAck(ctx, conn, msg.GetMessageId(), true, "")
 }
 
 // bindIdentity 鉴权通过后绑定连接身份：
@@ -129,8 +140,8 @@ func (h *AuthMsgHandler) bindIdentity(conn synp.Conn, user session.User) error {
 
 	// 注册连接路由 ( 重复注册幂等并刷新 TTL )。
 	// 注册失败不影响连接，只是分布式路由可能缺失。
-	if err = h.connRegistry.Register(ctx, user); err != nil {
-		slog.Error(
+	if err = h.connRegistry.Register(ctx, user, conn.ID()); err != nil {
+		logging.For("auth-msg-handler").Error(
 			"[auth-msg-handler] failed to register connection",
 			"conn_id", conn.ID(),
 			"error", err,
@@ -140,7 +151,16 @@ func (h *AuthMsgHandler) bindIdentity(conn synp.Conn, user session.User) error {
 	return nil
 }
 
-func (h *AuthMsgHandler) replyAuthAck(conn synp.Conn, messageID string, success bool, errorMessage string) error {
+// replyAuthAckBestEffort 尽力发送鉴权失败应答：
+// 发送失败或入队超时都不影响随后的连接关闭。
+func (h *AuthMsgHandler) replyAuthAckBestEffort(conn synp.Conn, messageID, errorMessage string) {
+	ctx, cancel := replyCtx()
+	defer cancel()
+
+	_ = h.replyAuthAck(ctx, conn, messageID, false, errorMessage)
+}
+
+func (h *AuthMsgHandler) replyAuthAck(ctx context.Context, conn synp.Conn, messageID string, success bool, errorMessage string) error {
 	body, err := protojson.Marshal(&messagev1.AuthAckPayload{
 		Success:      success,
 		ErrorMessage: errorMessage,
@@ -149,7 +169,7 @@ func (h *AuthMsgHandler) replyAuthAck(conn synp.Conn, messageID string, success 
 		return fmt.Errorf("failed to marshal auth ack payload: %w", err)
 	}
 
-	return h.pushFunc(conn, &messagev1.Message{
+	return h.pushFunc(ctx, conn, &messagev1.Message{
 		CommandType: commonv1.CommandType_COMMAND_TYPE_AUTH_ACK,
 		MessageId:   messageID,
 		Body:        body,

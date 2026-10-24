@@ -3,8 +3,9 @@ package xprocessor
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
@@ -65,7 +66,7 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 
 		consumer, err := p.factory.NewConsumer(topicCfg.Topic, topicCfg.GroupID)
 		if err != nil {
-			slog.Error(
+			logging.For("xmq.processor").Error(
 				"[xmq-consumer-processor] failed to create consumer",
 				"topic", topicCfg.Topic,
 				"group_id", topicCfg.GroupID,
@@ -81,7 +82,7 @@ func (p *ConsumeProcessor) Start(ctx context.Context) error {
 		//nolint:contextcheck // 这里需要使用长生命周期的 p.ctx
 		msgChan, err := consumer.ConsumeChan(p.ctx)
 		if err != nil {
-			slog.Error(
+			logging.For("xmq.processor").Error(
 				"[xmq-consumer-processor] failed to get message channel",
 				"topic", topicCfg.Topic,
 				"group_id", topicCfg.GroupID,
@@ -102,11 +103,11 @@ func (p *ConsumeProcessor) consume(msgChan <-chan *xmq.Message) {
 	for {
 		select {
 		case <-p.ctx.Done():
-			slog.Info("[xmq-consumer-processor] processor context done")
+			logging.For("xmq.processor").Info("[xmq-consumer-processor] processor context done")
 			return
 		case msg, ok := <-msgChan:
 			if !ok {
-				slog.Info("[xmq-consumer-processor] message channel closed")
+				logging.For("xmq.processor").Info("[xmq-consumer-processor] message channel closed")
 				return
 			}
 
@@ -115,7 +116,7 @@ func (p *ConsumeProcessor) consume(msgChan <-chan *xmq.Message) {
 			handlerCancel()
 
 			if err != nil {
-				slog.Error(
+				logging.For("xmq.processor").Error(
 					"[xmq-consumer-processor] failed to process message",
 					"topic", msg.Topic,
 					"offset", msg.Offset,

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/resolver"
 	"github.com/jrmarcco/xgrpc/register"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -21,7 +21,8 @@ var SyncClientFxModule = fx.Module(
 )
 
 // newSyncServiceConn 创建到后端 SyncService 的 gRPC 连接。
-func newSyncServiceConn(registry register.Registry, lifecycle fx.Lifecycle, logger *zap.Logger) (*grpc.ClientConn, error) {
+func newSyncServiceConn(registry register.Registry, lifecycle fx.Lifecycle) (*grpc.ClientConn, error) {
+	logger := logging.For("sync-client")
 	type config struct {
 		ServiceName string `mapstructure:"service_name"`
 		Insecure    bool   `mapstructure:"insecure"`
@@ -36,7 +37,7 @@ func newSyncServiceConn(registry register.Registry, lifecycle fx.Lifecycle, logg
 		return nil, fmt.Errorf("synp.sync_service.service_name is required")
 	}
 
-	resolverBuilder := resolver.NewRegistryResolverBuilder(registry, logger)
+	resolverBuilder := resolver.NewRegistryResolverBuilder(registry, logging.For("resolver"))
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithResolvers(resolverBuilder),
@@ -62,6 +63,6 @@ func newSyncServiceConn(registry register.Registry, lifecycle fx.Lifecycle, logg
 		},
 	})
 
-	logger.Info("[sync-client] sync service client conn created", zap.String("service_name", cfg.ServiceName))
+	logger.Info("[sync-client] sync service client conn created", "service_name", cfg.ServiceName)
 	return cc, nil
 }

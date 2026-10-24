@@ -3,11 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocessor"
-	"go.uber.org/zap"
 )
 
 type Consumer struct {
@@ -19,7 +20,7 @@ type Consumer struct {
 	factory   xconsumer.ConsumerFactory
 	processor *xprocessor.ConsumeProcessor
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewConsumer(
@@ -27,7 +28,6 @@ func NewConsumer(
 	partitions int32,
 	handleTimeout time.Duration,
 	factory xconsumer.ConsumerFactory,
-	logger *zap.Logger,
 ) (*Consumer, error) {
 	if topic == "" || groupID == "" || partitions <= 0 {
 		return nil, fmt.Errorf("topic, groupID and partitions are required")
@@ -41,7 +41,7 @@ func NewConsumer(
 		partitions:    partitions,
 		handleTimeout: handleTimeout,
 
-		logger: logger,
+		logger: logging.For("kafka.consumer"),
 	}, nil
 }
 

@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jrmarcco/synp/internal/pkg/logging"
+
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -47,7 +48,6 @@ type appFxParams struct {
 
 	WebSocketServer synp.Server
 
-	Logger    *zap.Logger
 	Lifecycle fx.Lifecycle
 }
 
@@ -70,7 +70,7 @@ func startApp(params appFxParams) error {
 
 		webSocketServer: params.WebSocketServer,
 
-		logger: params.Logger,
+		logger: logging.For("app"),
 	}
 
 	params.Lifecycle.Append(fx.Hook{

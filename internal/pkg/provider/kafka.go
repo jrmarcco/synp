@@ -6,15 +6,16 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/scram"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 type kafkaFxResult struct {
@@ -79,7 +80,8 @@ type kafkaOAuthConfig struct {
 	ClientSecret string `mapstructure:"client_secret"`
 }
 
-func newKafkaClient(logger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResult, error) {
+func newKafkaClient(lifecycle fx.Lifecycle) (kafkaFxResult, error) {
+	logger := logging.For("kafka")
 	cfg, err := loadKafkaConfig()
 	if err != nil {
 		return kafkaFxResult{}, err
@@ -135,10 +137,10 @@ func newKafkaClient(logger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResult, 
 	}
 	logger.Info(
 		"[kafka] successfully created kafka writer",
-		zap.Strings("brokers", cfg.Brokers),
-		zap.String("compression", cfg.Producer.Compression),
-		zap.Int("required_acks", cfg.Producer.RequiredAcks),
-		zap.Bool("idempotent", cfg.Producer.IdempotentEnabled),
+		"brokers", cfg.Brokers,
+		"compression", cfg.Producer.Compression,
+		"required_acks", cfg.Producer.RequiredAcks,
+		"idempotent", cfg.Producer.IdempotentEnabled,
 	)
 
 	// 创建 ReaderFactory，用于按需创建 Reader ( Consumer )。
@@ -161,9 +163,9 @@ func newKafkaClient(logger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResult, 
 
 		logger.Info(
 			"[kafka] created kafka reader",
-			zap.Strings("brokers", cfg.Brokers),
-			zap.String("topic", topic),
-			zap.String("group_id", groupId),
+			"brokers", cfg.Brokers,
+			"topic", topic,
+			"group_id", groupId,
 		)
 
 		return reader
@@ -173,7 +175,7 @@ func newKafkaClient(logger *zap.Logger, lifecycle fx.Lifecycle) (kafkaFxResult, 
 	lifecycle.Append(fx.Hook{
 		OnStop: func(_ context.Context) error {
 			if err := writer.Close(); err != nil {
-				logger.Error("[kafka] failed to close kafka writer", zap.Error(err))
+				logger.Error("[kafka] failed to close kafka writer", "error", err)
 				return fmt.Errorf("failed to close kafka writer: %w", err)
 			}
 			logger.Info("[kafka] kafka writer closed")
@@ -197,7 +199,7 @@ func loadKafkaConfig() (*kafkaConfig, error) {
 }
 
 // configureKafkaTLS 配置 TLS。
-func configureKafkaTLS(tlsCfg kafkaTLSConfig, logger *zap.Logger) (*tls.Config, error) {
+func configureKafkaTLS(tlsCfg kafkaTLSConfig, logger *slog.Logger) (*tls.Config, error) {
 	caCertPool := x509.NewCertPool()
 	if ok := caCertPool.AppendCertsFromPEM([]byte(tlsCfg.CaCert)); !ok {
 		logger.Error("[kafka] failed to append CA certificate to pool for kafka")
@@ -206,7 +208,7 @@ func configureKafkaTLS(tlsCfg kafkaTLSConfig, logger *zap.Logger) (*tls.Config, 
 
 	clientCert, err := tls.X509KeyPair([]byte(tlsCfg.CertPem), []byte(tlsCfg.CertKey))
 	if err != nil {
-		logger.Error("[kafka] failed to create certificate key pair for kafka", zap.Error(err))
+		logger.Error("[kafka] failed to create certificate key pair for kafka", "error", err)
 		return nil, fmt.Errorf("failed to create certificate key pair for kafka: %w", err)
 	}
 
@@ -220,7 +222,7 @@ func configureKafkaTLS(tlsCfg kafkaTLSConfig, logger *zap.Logger) (*tls.Config, 
 }
 
 // configureKafkaSasl 配置 SASL 认证机制。
-func configureKafkaSasl(saslCfg kafkaSaslConfig, logger *zap.Logger) (sasl.Mechanism, error) {
+func configureKafkaSasl(saslCfg kafkaSaslConfig, logger *slog.Logger) (sasl.Mechanism, error) {
 	mechanism := saslCfg.Mechanism
 	switch mechanism {
 	case "scram":
@@ -233,7 +235,7 @@ func configureKafkaSasl(saslCfg kafkaSaslConfig, logger *zap.Logger) (sasl.Mecha
 }
 
 // configureKafkaSaslScram 配置 SASL/SCRAM-SHA-256 认证。
-func configureKafkaSaslScram(saslCfg kafkaSaslConfig, logger *zap.Logger) (sasl.Mechanism, error) {
+func configureKafkaSaslScram(saslCfg kafkaSaslConfig, logger *slog.Logger) (sasl.Mechanism, error) {
 	if saslCfg.Username == "" || saslCfg.Password == "" {
 		return nil, errors.New("username and password are required for SCRAM authentication")
 	}
@@ -242,22 +244,22 @@ func configureKafkaSaslScram(saslCfg kafkaSaslConfig, logger *zap.Logger) (sasl.
 	if err != nil {
 		logger.Error(
 			"[kafka] failed to create SASL/SCRAM mechanism",
-			zap.String("username", saslCfg.Username),
-			zap.Error(err),
+			"username", saslCfg.Username,
+			"error", err,
 		)
 		return nil, fmt.Errorf("failed to create SASL/SCRAM mechanism: %w", err)
 	}
 
 	logger.Info(
 		"[kafka] successfully configured SASL/SCRAM-SHA-256 for kafka",
-		zap.String("username", saslCfg.Username),
+		"username", saslCfg.Username,
 	)
 
 	return mechanism, nil
 }
 
 // configureKafkaSaslOAuth 配置 SASL/OAUTHBEARER 认证。
-func configureKafkaSaslOAuth(oauthCfg kafkaOAuthConfig, logger *zap.Logger) (sasl.Mechanism, error) {
+func configureKafkaSaslOAuth(oauthCfg kafkaOAuthConfig, logger *slog.Logger) (sasl.Mechanism, error) {
 	if oauthCfg.Endpoint == "" || oauthCfg.ClientID == "" || oauthCfg.ClientSecret == "" {
 		return nil, errors.New("token_endpoint, client_id and client_secret are required for OAuth authentication")
 	}
@@ -270,8 +272,8 @@ func configureKafkaSaslOAuth(oauthCfg kafkaOAuthConfig, logger *zap.Logger) (sas
 
 	logger.Info(
 		"[kafka] successfully configured SASL/OAUTHBEARER for kafka",
-		zap.String("token_endpoint", oauthCfg.Endpoint),
-		zap.String("client_id", oauthCfg.ClientID),
+		"token_endpoint", oauthCfg.Endpoint,
+		"client_id", oauthCfg.ClientID,
 	)
 
 	return mechanism, nil

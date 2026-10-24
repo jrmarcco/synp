@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -13,17 +14,35 @@ import (
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/limiter"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"github.com/jrmarcco/synp/internal/pkg/session"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	wsc "github.com/jrmarcco/synp/internal/ws/conn"
 	"github.com/jrmarcco/synp/internal/ws/conn/lifecycle"
 	"github.com/jrmarcco/synp/internal/ws/gateway"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// defaultAuthTimeout 为连接建立后等待首帧 AUTH 的默认超时时间。
-const defaultAuthTimeout = 15 * time.Second
+const (
+	// defaultAuthTimeout 为连接建立后等待首帧 AUTH 的默认超时时间。
+	defaultAuthTimeout = 15 * time.Second
+
+	// defaultIdleScanInterval / defaultIdleTimeout 为空闲连接扫描的默认参数。
+	// 假设客户端每 30 秒一次心跳，2 分钟空闲超时可容忍连续 3~4 次心跳丢失。
+	defaultIdleScanInterval = 30 * time.Second
+	defaultIdleTimeout      = 2 * time.Minute
+
+	// defaultDrainTimeout 为优雅关闭时等待存量连接排空的超时时间。
+	defaultDrainTimeout = 10 * time.Second
+
+	// drainPollInterval 为排空轮询间隔。
+	drainPollInterval = 100 * time.Millisecond
+
+	// slowCloseOverflowCnt 为慢客户端断开的入队连续超时阈值。
+	// 默认扫描周期 30s 时约等于持续 ~90s 无法下发。
+	slowCloseOverflowCnt = int32(3)
+)
 
 var _ synp.Server = (*Server)(nil)
 
@@ -38,20 +57,26 @@ type Server struct {
 
 	consumers map[string]*gateway.Consumer
 
-	connLimiter *limiter.TokenLimiter
+	connLimiter *limiter.ConnLimiter
 	backoff     *backoff.ExponentialBackOff
 
-	acceptNewConn    atomic.Bool
-	idleScanInterval time.Duration // TODO: 空闲连接扫描间隔 还未配置完成
+	acceptNewConn atomic.Bool
 
 	// authTimeout 为连接建立后等待首帧 AUTH 的超时时间，
 	// 超时未鉴权的连接由网关关闭。
 	authTimeout time.Duration
 
+	// idleScanInterval / idleTimeout 为空闲连接扫描参数。
+	idleScanInterval time.Duration
+	idleTimeout      time.Duration
+
+	// drainTimeout 为优雅关闭时等待存量连接排空的超时时间。
+	drainTimeout time.Duration
+
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewServer(
@@ -60,7 +85,6 @@ func NewServer(
 	connHandler synp.Handler,
 	connManager synp.ConnManager,
 	consumers map[string]*gateway.Consumer,
-	logger *zap.Logger,
 	opts ...option.Opt[Server],
 ) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,17 +95,20 @@ func NewServer(
 		connHandler: connHandler,
 		connManager: connManager,
 
-		connLimiter: limiter.NewTokenLimiter(limiter.DefaultConfig()), // 默认令牌桶限流器
-		backoff:     backoff.NewExponentialBackOff(),                  // 默认退避策略
-
 		consumers: consumers,
 
-		authTimeout: defaultAuthTimeout,
+		connLimiter: limiter.NewConnLimiter(0),
+		backoff:     backoff.NewExponentialBackOff(),
+
+		authTimeout:      defaultAuthTimeout,
+		idleScanInterval: defaultIdleScanInterval,
+		idleTimeout:      defaultIdleTimeout,
+		drainTimeout:     defaultDrainTimeout,
 
 		ctx:        ctx,
 		cancelFunc: cancel,
 
-		logger: logger,
+		logger: logging.For("ws.server"),
 	}
 	s.acceptNewConn.Store(true)
 
@@ -91,6 +118,9 @@ func NewServer(
 
 // Start 启动 WebSocket 服务器。
 func (s *Server) Start() error {
+	// 参数校验: 非法的扫描/超时参数回落默认值，避免 NewTicker(0) 等 panic。
+	s.normalizeParams()
+
 	// 端口启用并监听 upgrade 请求，完成 WebSocket 的初始化工作。
 	lc := net.ListenConfig{}
 	ln, err := lc.Listen(s.ctx, s.config.Network, s.config.Address())
@@ -98,7 +128,7 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	s.logger.Info("[server] ws server started", zap.String("addr", s.config.Address()))
+	s.logger.Info("[server] ws server started", "addr", s.config.Address())
 	s.listener = ln
 
 	go s.acceptConn()
@@ -106,10 +136,26 @@ func (s *Server) Start() error {
 
 	// 初始化网关业务消息消费者。
 	if err := s.initConsumers(); err != nil {
-		s.logger.Error("[server] failed to initialize consumers", zap.Error(err))
+		s.logger.Error("[server] failed to initialize consumers", "error", err)
 		return err
 	}
 	return nil
+}
+
+// normalizeParams 校验并回落服务参数默认值。
+func (s *Server) normalizeParams() {
+	if s.authTimeout <= 0 {
+		s.authTimeout = defaultAuthTimeout
+	}
+	if s.idleScanInterval <= 0 {
+		s.idleScanInterval = defaultIdleScanInterval
+	}
+	if s.idleTimeout <= s.idleScanInterval {
+		s.idleTimeout = defaultIdleTimeout
+	}
+	if s.drainTimeout <= 0 {
+		s.drainTimeout = defaultDrainTimeout
+	}
 }
 
 // acceptConn 接收 WebSocket 连接。
@@ -123,27 +169,29 @@ func (s *Server) acceptConn() {
 			return
 		}
 
-		// 接收连接前先获取令牌。
+		// 接收连接前先检查连接数上限。
 		if !s.connLimiter.Acquire() {
 			next := s.backoff.NextBackOff()
 
 			s.logger.Warn(
 				"[server] connection limit reached, reject new connection",
-				zap.Duration("next_backoff", next),
+				"max_connections", s.connLimiter.Max(),
+				"current_connections", s.connLimiter.Curr(),
+				"next_backoff", next,
 			)
 			time.Sleep(next)
 			continue
 		}
 
-		// 成功获取令牌，重置退避策略。
+		// 成功占用配额，重置退避策略。
 		s.backoff.Reset()
 
 		conn, err := s.listener.Accept()
 		if err != nil {
-			// 接收连接失败，归还令牌。
+			// 接收连接失败，归还配额。
 			s.connLimiter.Release()
 
-			s.logger.Error("[server] failed to accept connection", zap.Error(err))
+			s.logger.Error("[server] failed to accept connection", "error", err)
 			if errors.Is(err, net.ErrClosed) {
 				// net.ErrClosed 表示 listener 已关闭，此时可以退出。
 				return
@@ -167,33 +215,35 @@ func (s *Server) acceptConn() {
 
 // handleConn 处理 WebSocket 连接。
 func (s *Server) handleConn(conn net.Conn) {
-	// 归还令牌。
+	// 归还连接配额。
 	defer s.connLimiter.Release()
 
 	// 关闭连接。
 	defer func() {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
-			s.logger.Warn("[server] failed to close connection", zap.Error(err))
+			s.logger.Warn("[server] failed to close connection", "error", err)
 		}
 	}()
 
 	// 处理 upgrade 请求。
 	sess, compressionState, err := s.upgrader.Upgrade(conn)
 	if err != nil {
+		metrics.HandshakeTotal.WithLabelValues("failure").Inc()
 		s.logger.Error(
 			"[server] failed to upgrade connection from HTTP to WebSocket",
-			zap.Error(err),
+			"error", err,
 		)
 		return
 	}
+	metrics.HandshakeTotal.WithLabelValues("success").Inc()
 
 	// 创建、管理连接。
 	// 注意这里的连接指的是 synp.Conn 而不是 net.Conn 接口。
 	// 新协议下连接建立时身份未知 ( 首帧 AUTH 完成鉴权 )，创建的是匿名连接。
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
-		s.logger.Error("[server] failed to create synp connection", zap.Error(err))
+		s.logger.Error("[server] failed to create synp connection", "error", err)
 		return
 	}
 
@@ -203,8 +253,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		if err := synpConn.Close(); err != nil {
 			s.logger.Error(
 				"[server] failed to close synp connection",
-				zap.String("conn_id", synpConn.ID()),
-				zap.Error(err),
+				"conn_id", synpConn.ID(),
+				"error", err,
 			)
 		}
 	}()
@@ -213,8 +263,8 @@ func (s *Server) handleConn(conn net.Conn) {
 	if err := s.connHandler.OnConnect(synpConn); err != nil {
 		s.logger.Error(
 			"[server] failed to handle on connect lifecycle event",
-			zap.String("conn_id", synpConn.ID()),
-			zap.Error(err),
+			"conn_id", synpConn.ID(),
+			"error", err,
 		)
 		// on connect 事件失败，直接返回。
 		// 这里最好直接返回以防止后续的事件处理发生不可预料的错误。
@@ -224,8 +274,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		if err := s.connHandler.OnDisconnect(synpConn); err != nil {
 			s.logger.Error(
 				"[server] failed to handle on disconnect lifecycle event",
-				zap.String("conn_id", synpConn.ID()),
-				zap.Error(err),
+				"conn_id", synpConn.ID(),
+				"error", err,
 			)
 		}
 	}()
@@ -255,7 +305,7 @@ func (s *Server) handleConn(conn net.Conn) {
 				// 处理前端（业务客户端）发送的消息失败。
 				s.logger.Error(
 					"[server] failed to handle on receive from frontend event",
-					zap.Error(err),
+					"error", err,
 				)
 
 				// 如果连接已关闭，则直接返回 ( wsc => internal/ws/conn )。
@@ -283,7 +333,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 			s.logger.Info(
 				"[server] close connection because of auth timeout",
-				zap.String("conn_id", synpConn.ID()),
+				"conn_id", synpConn.ID(),
 			)
 			return
 		case <-synpConn.Closed():
@@ -296,20 +346,47 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 }
 
-// cleanIdleConn 清理空闲连接。
+// idleScanShards 为空闲扫描分片数。
+// 扫描周期 = idle_scan_interval / shards ( 默认 30s/30 = 每秒扫 1 个分片 )。
+const idleScanShards = 30
+
+// cleanIdleConn 清理空闲连接与慢客户端。
+// 按分片巡检: 每个周期只扫描 1/idleScanShards 的连接，
+// 避免大规模连接下单次扫描集中获取全部连接锁。
 func (s *Server) cleanIdleConn() {
-	ticker := time.NewTicker(s.idleScanInterval)
+	scanInterval := s.idleScanInterval / idleScanShards
+	if scanInterval <= 0 {
+		scanInterval = time.Second
+	}
+
+	ticker := time.NewTicker(scanInterval)
 	defer ticker.Stop()
 
-	s.logger.Debug("[server] idle connection cleaner started")
+	s.logger.Debug(
+		"[server] idle connection cleaner started",
+		"scan_interval", scanInterval,
+		"shards", idleScanShards,
+		"idle_timeout", s.idleTimeout,
+	)
 
+	var shard uint64
 	for {
 		select {
 		case <-s.ctx.Done():
 			s.logger.Info("[server] idle connection cleaner stopped by context done")
 			return
 		case <-ticker.C:
-			// TODO:关闭所有空闲连接。
+			s.connManager.RangeConnsShard(shard%idleScanShards, idleScanShards, func(conn synp.Conn) bool {
+				// 空闲清理 ( 启用 auto close 的连接 ) 与
+				// 慢客户端隔离 ( 出站入队持续超时 ) 统一巡检。
+				// 连续 3 个扫描周期入队超时视为僵死连接。
+				if conn.TryCloseIfIdle(s.idleTimeout) {
+					return true
+				}
+				conn.TryCloseIfSlow(slowCloseOverflowCnt)
+				return true
+			})
+			shard++
 		}
 	}
 }
@@ -321,21 +398,21 @@ func (s *Server) initConsumers() error {
 		case gateway.EventNotifyMessage:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[server] consumer not found", zap.String("event", key))
+				s.logger.Warn("[server] consumer not found", "event", key)
 				continue
 			}
 			if err := consumer.StartConsumer(s.ctx, s.consumeNotifyMessage); err != nil {
-				s.logger.Error("[server] failed to start notify message consumer", zap.Error(err))
+				s.logger.Error("[server] failed to start notify message consumer", "error", err)
 				return err
 			}
 		case gateway.EventScaleUp:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[server] consumer not found", zap.String("event", key))
+				s.logger.Warn("[server] consumer not found", "event", key)
 				continue
 			}
 			if err := consumer.StartConsumer(s.ctx, s.consumeScaleUp); err != nil {
-				s.logger.Error("[server] failed to start scale up consumer", zap.Error(err))
+				s.logger.Error("[server] failed to start scale up consumer", "error", err)
 				return err
 			}
 		}
@@ -347,14 +424,14 @@ func (s *Server) initConsumers() error {
 //
 // 通知 topic 为广播消费：每个网关节点独立消费全量，
 // 按本地连接过滤后下发，节点上无该用户连接时忽略 ( 通知丢失只影响实时性 )。
-func (s *Server) consumeNotifyMessage(_ context.Context, msg *xmq.Message) error {
+func (s *Server) consumeNotifyMessage(ctx context.Context, msg *xmq.Message) error {
 	notifyMsg := &messagev1.NotifyMessage{}
 	// 后端 ( 业务服务端 ) 投递到通知 topic 的记录使用 protojson 编码。
 	if err := protojson.Unmarshal(msg.Val, notifyMsg); err != nil {
 		s.logger.Error(
 			"[server] failed to unmarshal notify message",
-			zap.String("message", string(msg.Val)),
-			zap.Error(err),
+			"message", string(msg.Val),
+			"error", err,
 		)
 		return err
 	}
@@ -368,17 +445,17 @@ func (s *Server) consumeNotifyMessage(_ context.Context, msg *xmq.Message) error
 		// 广播模型下其它节点会向其本地连接下发。
 		s.logger.Debug(
 			"[server] receiver not on this node, ignore notify message",
-			zap.Uint64("business_id", notifyMsg.GetBusinessId()),
-			zap.Uint64("receiver_id", notifyMsg.GetReceiverId()),
+			"business_id", notifyMsg.GetBusinessId(),
+			"receiver_id", notifyMsg.GetReceiverId(),
 		)
 		return nil
 	}
 
-	if err := s.connHandler.OnReceiveFromBackend(conns, notifyMsg); err != nil {
+	if err := s.connHandler.OnReceiveFromBackend(ctx, conns, notifyMsg); err != nil {
 		s.logger.Error(
 			"[server] failed to handle on receive from backend event",
-			zap.String("message", string(msg.Val)),
-			zap.Error(err),
+			"message", string(msg.Val),
+			"error", err,
 		)
 		return err
 	}
@@ -387,35 +464,73 @@ func (s *Server) consumeNotifyMessage(_ context.Context, msg *xmq.Message) error
 
 // consumeScaleUp 消费 scale up 事件。
 func (s *Server) consumeScaleUp(_ context.Context, _ *xmq.Message) error {
-	// TODO: not implemented
-	panic("not implemented")
+	// 尚未实现，返回错误触发消费侧重试而非 panic 终止进程。
+	return errors.New("[server] scale up consumer not implemented")
 }
 
+// Shutdown 关闭 WebSocket 服务器。
 func (s *Server) Shutdown() error {
 	s.logger.Info("[server] shutting down ws server")
-	// 关闭限流器。
-	if err := s.connLimiter.Close(); err != nil {
-		s.logger.Error("[server] failed to close connection limiter", zap.Error(err))
-		return err
-	}
-
 	s.cancelFunc()
 	s.logger.Info("[server] ws server shut down")
 	return nil
 }
 
+// GracefulShutdown 优雅关闭 WebSocket 服务器。
+//
+// 顺序: 停止接受新连接 -> 停止 Kafka 消费 -> 等待存量连接排空 ( 带超时 )
+// -> 强制关闭剩余连接 -> 取消服务器 context。
+// 注意不能先等待 ctx.Done 再取消 ctx——那会永久阻塞 ( 自锁 )。
 func (s *Server) GracefulShutdown() error {
 	s.logger.Info("[server] graceful shutting down ws server")
 
+	// 1. 停止接受新连接。
 	s.acceptNewConn.Store(false)
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
-			s.logger.Warn("[server] failed to close net listener", zap.Error(err))
+			s.logger.Warn("[server] failed to close net listener", "error", err)
 		}
 	}
 
-	// TODO: 优雅关闭。
+	// 2. 停止 Kafka 消费，不再产生新的下行通知。
+	s.stopConsumers()
 
-	<-s.ctx.Done()
+	// 3. 等待存量连接排空 ( handleConn 退出时连接自行关闭 )。
+	deadline := time.Now().Add(s.drainTimeout)
+	for time.Now().Before(deadline) {
+		if s.connManager.ConnCount() == 0 {
+			break
+		}
+		time.Sleep(drainPollInterval)
+	}
+
+	// 4. 关闭排空超时后仍存活的连接。
+	if remained := s.connManager.ConnCount(); remained > 0 {
+		s.logger.Info(
+			"[server] drain timeout exceeded, closing remaining connections",
+			"count", remained,
+		)
+		s.connManager.RangeConns(func(conn synp.Conn) bool {
+			_ = conn.Close()
+			return true
+		})
+	}
+
 	return s.Shutdown()
+}
+
+// stopConsumers 停止全部 Kafka 消费者。
+func (s *Server) stopConsumers() {
+	ctx, cancel := context.WithTimeout(context.Background(), s.drainTimeout)
+	defer cancel()
+
+	for event, consumer := range s.consumers {
+		if err := consumer.StopConsumer(ctx); err != nil {
+			s.logger.Warn(
+				"[server] failed to stop consumer",
+				"event", event,
+				"error", err,
+			)
+		}
+	}
 }

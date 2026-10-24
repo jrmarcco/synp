@@ -10,10 +10,9 @@ import (
 	"github.com/spf13/viper"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
-func newEtcdClient(logger *zap.Logger, lifecycle fx.Lifecycle) (*clientv3.Client, error) {
+func newEtcdClient(lifecycle fx.Lifecycle) (*clientv3.Client, error) {
 	type tlsConfig struct {
 		Enabled bool `mapstructure:"enabled"`
 

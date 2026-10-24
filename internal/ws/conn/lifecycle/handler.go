@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	cc "github.com/jrmarcco/synp/internal/pkg/codec"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/message/upstream"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 const defaultRegisterTimeout = 3 * time.Second
@@ -44,7 +46,7 @@ type Handler struct {
 
 	connRegistry synp.ConnRegistry
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewHandler(
@@ -55,7 +57,6 @@ func NewHandler(
 	nMsgHandler notify.NMsgHandler,
 	uMsgHandlers []upstream.UMsgHandler,
 	connRegistry synp.ConnRegistry,
-	logger *zap.Logger,
 ) *Handler {
 	uMsgHandlerMap := make(map[commonv1.CommandType]upstream.UMsgHandler)
 	for _, handler := range uMsgHandlers {
@@ -74,7 +75,7 @@ func NewHandler(
 		uMsgHandlerMap: uMsgHandlerMap,
 		connRegistry:   connRegistry,
 
-		logger: logger,
+		logger: logging.For("conn-lifecycle"),
 	}
 }
 
@@ -84,7 +85,7 @@ func NewHandler(
 func (h *Handler) OnConnect(conn synp.Conn) error {
 	h.logger.Debug(
 		"[conn-lifecycle-handler] connection connected, waiting for auth",
-		zap.String("conn_id", conn.ID()),
+		"conn_id", conn.ID(),
 	)
 	return nil
 }
@@ -97,7 +98,7 @@ func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	default:
 		h.logger.Debug(
 			"[conn-lifecycle-handler] anonymous connection disconnected",
-			zap.String("conn_id", conn.ID()),
+			"conn_id", conn.ID(),
 		)
 		return conn.Close()
 	}
@@ -108,19 +109,19 @@ func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultRegisterTimeout)
 	defer cancel()
 
-	if err := h.connRegistry.Unregister(ctx, user); err != nil {
+	if err := h.connRegistry.Unregister(ctx, user, conn.ID()); err != nil {
 		// 注销失败不影响连接关闭，只记录日志。
 		h.logger.Error(
 			"[conn-lifecycle-handler] failed to unregister connection",
-			zap.String("conn_id", conn.ID()),
-			zap.Any("user", user),
-			zap.Error(err),
+			"conn_id", conn.ID(),
+			"user", user,
+			"error", err,
 		)
 	}
 
 	h.logger.Debug(
 		"[conn-lifecycle-handler] connection disconnected and unregistered",
-		zap.String("conn_id", conn.ID()),
+		"conn_id", conn.ID(),
 	)
 	return conn.Close()
 }
@@ -132,9 +133,9 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	if err != nil {
 		h.logger.Error(
 			"[conn-lifecycle-handler] failed to decode payload",
-			zap.String("conn_id", conn.ID()),
-			zap.Any("user", conn.Session().User()),
-			zap.Error(err),
+			"conn_id", conn.ID(),
+			"user", conn.Session().User(),
+			"error", err,
 		)
 		return err
 	}
@@ -143,24 +144,30 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH && !h.authenticated(conn) {
 		h.logger.Warn(
 			"[conn-lifecycle-handler] reject message before authentication",
-			zap.String("conn_id", conn.ID()),
-			zap.Any("command_type", msg.GetCommandType().String()),
+			"conn_id", conn.ID(),
+			"command_type", msg.GetCommandType().String(),
 		)
 		return ErrNotAuthenticated
 	}
 
 	// 消息去重 ( 幂等 )。
-	// 注意 AUTH 帧不参与去重：重复 AUTH 由 AuthMsgHandler 幂等处理。
+	// 不参与去重的帧:
+	//   - HEARTBEAT: 高频且幂等。
+	//   - AUTH: 重复 AUTH 由 AuthMsgHandler 幂等处理。
+	//   - SYNC / CONVERSATION_SYNC: 同步请求幂等由游标语义保证
+	//     ( 重复拉取返回相同增量 )，不应被 Redis 可用性绑死。
 	user := conn.Session().User()
 	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_HEARTBEAT &&
-		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH {
+		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH &&
+		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_SYNC &&
+		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_CONVERSATION_SYNC {
 		ok, cacheErr := h.cacheMessage(user.BID, user.UID, msg)
 		if cacheErr != nil {
 			h.logger.Error(
 				"[conn-lifecycle-handler] failed to cache message",
-				zap.String("conn_id", conn.ID()),
-				zap.Any("user", user),
-				zap.Error(cacheErr),
+				"conn_id", conn.ID(),
+				"user", user,
+				"error", cacheErr,
 			)
 			return fmt.Errorf("%w: %w", ErrCacheMessage, cacheErr)
 		}
@@ -168,19 +175,24 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		if !ok {
 			h.logger.Warn(
 				"[conn-lifecycle-handler] message duplicated, ignore it",
-				zap.String("conn_id", conn.ID()),
-				zap.String("message_id", msg.GetMessageId()),
-				zap.Any("user", user),
+				"conn_id", conn.ID(),
+				"message_id", msg.GetMessageId(),
+				"user", user,
 			)
 			return ErrMessageDuplicated
 		}
 	}
 
-	h.logger.Info(
+	// 热路径日志降级: 只记录元数据，不序列化完整消息体。
+	metrics.MsgInTotal.WithLabelValues(msg.GetCommandType().String()).Inc()
+
+	h.logger.Debug(
 		"[conn-lifecycle-handler] received message from frontend",
-		zap.String("conn_id", conn.ID()),
-		zap.String("message", msg.String()),
-		zap.Any("user", user),
+		"conn_id", conn.ID(),
+		"message_id", msg.GetMessageId(),
+		"command_type", msg.GetCommandType().String(),
+		"body_len", len(msg.GetBody()),
+		"user", user,
 	)
 
 	// 处理消息。
@@ -188,8 +200,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	if !ok {
 		h.logger.Error(
 			"[conn-lifecycle-handler] unknown message type from frontend",
-			zap.String("conn_id", conn.ID()),
-			zap.Any("user", user),
+			"conn_id", conn.ID(),
+			"user", user,
 		)
 		return ErrUnknownMessageType
 	}
@@ -201,9 +213,9 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 			if uncacheErr != nil {
 				h.logger.Error(
 					"[conn-lifecycle-handler] failed to uncache message",
-					zap.String("conn_id", conn.ID()),
-					zap.String("message", msg.String()),
-					zap.Error(uncacheErr),
+					"conn_id", conn.ID(),
+					"message", msg.String(),
+					"error", uncacheErr,
 				)
 			}
 		}
@@ -243,6 +255,11 @@ func (h *Handler) cacheMessage(bid, uid uint64, msg *messagev1.Message) (bool, e
 	ctx, cancel := context.WithTimeout(context.Background(), h.cacheRequestTimeout)
 	defer cancel()
 
+	start := time.Now()
+	defer func() {
+		metrics.RedisDedupDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	return h.rdb.SetNX(
 		ctx,
 		h.cacheKey(bid, uid, msg.GetMessageId()),
@@ -272,7 +289,7 @@ func (h *Handler) cacheKey(bid, uid uint64, messageID string) string {
 }
 
 // OnReceiveFromBackend 处理收到后端通知消息的事件，向客户端下发 NOTIFY 帧。
-func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.NotifyMessage) error {
+func (h *Handler) OnReceiveFromBackend(ctx context.Context, conns []synp.Conn, msg *messagev1.NotifyMessage) error {
 	if msg.GetMessageId() == "" {
 		return fmt.Errorf("%w: empty message_id", ErrInvalidMessage)
 	}
@@ -280,5 +297,5 @@ func (h *Handler) OnReceiveFromBackend(conns []synp.Conn, msg *messagev1.NotifyM
 		return fmt.Errorf("%w: empty receiver_id", ErrInvalidMessage)
 	}
 
-	return h.nMsgHandler.Handle(conns, msg)
+	return h.nMsgHandler.Handle(ctx, conns, msg)
 }

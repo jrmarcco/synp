@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/message/notify"
 	"github.com/jrmarcco/synp/internal/pkg/session"
-	"go.uber.org/zap"
 )
 
 var ErrUserNotOnline = errors.New("user not online")
@@ -32,22 +33,21 @@ type DefaultNotifyService struct {
 
 	connManager synp.ConnManager
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func NewDefaultNotifyService(
 	nMsgHandler notify.NMsgHandler,
 	connManager synp.ConnManager,
-	logger *zap.Logger,
 ) *DefaultNotifyService {
 	return &DefaultNotifyService{
 		nMsgHandler: nMsgHandler,
 		connManager: connManager,
-		logger:      logger,
+		logger:      logging.For("notify-service"),
 	}
 }
 
-func (s *DefaultNotifyService) Notify(_ context.Context, msg *messagev1.NotifyMessage) error {
+func (s *DefaultNotifyService) Notify(ctx context.Context, msg *messagev1.NotifyMessage) error {
 	conns, ok := s.connManager.FindUserConn(session.User{
 		BID: msg.GetBusinessId(),
 		UID: msg.GetReceiverId(),
@@ -55,20 +55,20 @@ func (s *DefaultNotifyService) Notify(_ context.Context, msg *messagev1.NotifyMe
 	if !ok {
 		s.logger.Debug(
 			"[notify-service] user not online on this node",
-			zap.Uint64("business_id", msg.GetBusinessId()),
-			zap.Uint64("receiver_id", msg.GetReceiverId()),
-			zap.String("message_id", msg.GetMessageId()),
+			"business_id", msg.GetBusinessId(),
+			"receiver_id", msg.GetReceiverId(),
+			"message_id", msg.GetMessageId(),
 		)
 		return ErrUserNotOnline
 	}
 
-	if err := s.nMsgHandler.Handle(conns, msg); err != nil {
+	if err := s.nMsgHandler.Handle(ctx, conns, msg); err != nil {
 		s.logger.Error(
 			"[notify-service] failed to notify user",
-			zap.Uint64("business_id", msg.GetBusinessId()),
-			zap.Uint64("receiver_id", msg.GetReceiverId()),
-			zap.String("message_id", msg.GetMessageId()),
-			zap.Error(err),
+			"business_id", msg.GetBusinessId(),
+			"receiver_id", msg.GetReceiverId(),
+			"message_id", msg.GetMessageId(),
+			"error", err,
 		)
 		return err
 	}

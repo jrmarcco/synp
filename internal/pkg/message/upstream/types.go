@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"time"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
@@ -30,4 +31,13 @@ type SyncCaller interface {
 
 	// ConversationSync 返回指定会话 timeline 的增量消息，用于读扩散 ( 大群 ) 场景。
 	ConversationSync(ctx context.Context, req *messagev1.ConversationSyncRequest) (*messagev1.ConversationSyncResponse, error)
+}
+
+// defaultReplyEnqueueTimeout 为 *_ACK 应答帧发送入队等待的默认上限。
+// 超时后 ACK 失败由客户端重试兜底，不应阻塞消息处理循环。
+const defaultReplyEnqueueTimeout = 200 * time.Millisecond
+
+// replyCtx 返回应答帧发送用的入队超时 context。
+func replyCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), defaultReplyEnqueueTimeout)
 }

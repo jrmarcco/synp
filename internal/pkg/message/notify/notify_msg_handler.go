@@ -1,12 +1,21 @@
 package notify
 
 import (
+	"context"
+	"errors"
+	"time"
+
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/message"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+// defaultEnqueueTimeout 为 NOTIFY 帧发送入队等待的默认上限。
+const defaultEnqueueTimeout = 200 * time.Millisecond
 
 var _ NMsgHandler = (*NotifyMsgHandler)(nil)
 
@@ -18,15 +27,23 @@ var _ NMsgHandler = (*NotifyMsgHandler)(nil)
 // 因此不做重传。
 type NotifyMsgHandler struct {
 	pushFunc message.PushFunc
+
+	// enqueueTimeout 为单个连接的发送入队等待上限，
+	// 超时丢弃该连接的 NOTIFY 帧，避免慢客户端阻塞消费循环。
+	enqueueTimeout time.Duration
 }
 
-func NewNotifyMsgHandler(pushFunc message.PushFunc) *NotifyMsgHandler {
+func NewNotifyMsgHandler(pushFunc message.PushFunc, enqueueTimeout time.Duration) *NotifyMsgHandler {
+	if enqueueTimeout <= 0 {
+		enqueueTimeout = defaultEnqueueTimeout
+	}
 	return &NotifyMsgHandler{
-		pushFunc: pushFunc,
+		pushFunc:       pushFunc,
+		enqueueTimeout: enqueueTimeout,
 	}
 }
 
-func (h *NotifyMsgHandler) Handle(conns []synp.Conn, notifyMsg *messagev1.NotifyMessage) error {
+func (h *NotifyMsgHandler) Handle(ctx context.Context, conns []synp.Conn, notifyMsg *messagev1.NotifyMessage) error {
 	body, err := protojson.Marshal(&messagev1.NotifyPayload{
 		LatestSeq: notifyMsg.GetLatestSeq(),
 	})
@@ -42,9 +59,26 @@ func (h *NotifyMsgHandler) Handle(conns []synp.Conn, notifyMsg *messagev1.Notify
 	}
 
 	for _, conn := range conns {
-		if err = h.pushFunc(conn, notifyFrame); err != nil {
+		// 入队等待同时受消费侧处理超时与单连接 enqueueTimeout 约束。
+		enqueueCtx, cancel := context.WithTimeout(ctx, h.enqueueTimeout)
+
+		if err = h.pushFunc(enqueueCtx, conn, notifyFrame); err != nil {
+			cancel()
+
+			// NOTIFY 允许丢 ( 客户端重连/心跳时主动 SYNC 兜底 )，
+			// 超时只计数与记日志，不阻塞其它连接、不中断消费。
+			if errors.Is(err, synp.ErrSendEnqueueTimeout) {
+				metrics.NotifyDropTotal.Inc()
+				logging.For("notify-msg-handler").Warn(
+					"[notify-msg-handler] notify frame dropped due to enqueue timeout",
+					"conn_id", conn.ID(),
+					"message_id", notifyMsg.GetMessageId(),
+				)
+				continue
+			}
 			return err
 		}
+		cancel()
 
 		// 成功发送消息到前端，更新连接活跃时间。
 		conn.UpdateActivityTime()

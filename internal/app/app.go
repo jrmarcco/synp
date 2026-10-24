@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -28,7 +28,7 @@ type app struct {
 
 	webSocketServer synp.Server
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func (app *app) Start(ctx context.Context) (err error) {
@@ -42,17 +42,17 @@ func (app *app) Start(ctx context.Context) (err error) {
 		}
 		if webSocketStarted {
 			if stopErr := app.webSocketServer.GracefulShutdown(); stopErr != nil {
-				app.logger.Warn("[app] failed to rollback ws server", zap.Error(stopErr))
+				app.logger.Warn("[app] failed to rollback ws server", "error", stopErr)
 			}
 		}
 		if grpcRegistered {
 			if unregisterErr := app.unregisterGrpc(ctx); unregisterErr != nil {
-				app.logger.Warn("[app] failed to rollback grpc registration", zap.Error(unregisterErr))
+				app.logger.Warn("[app] failed to rollback grpc registration", "error", unregisterErr)
 			}
 		}
 		if grpcStarted {
 			if stopErr := app.stopGrpc(); stopErr != nil {
-				app.logger.Warn("[app] failed to rollback grpc server", zap.Error(stopErr))
+				app.logger.Warn("[app] failed to rollback grpc server", "error", stopErr)
 			}
 		}
 	}()
@@ -117,7 +117,7 @@ func (app *app) startGrpc(ctx context.Context) error {
 
 	go func() {
 		if serveErr := app.grpcServer.Serve(ln); serveErr != nil && !isExpectedGRPCServeErr(serveErr) {
-			app.logger.Error("[app] grpc serve exited with error", zap.Error(serveErr))
+			app.logger.Error("[app] grpc serve exited with error", "error", serveErr)
 		}
 	}()
 
@@ -156,7 +156,7 @@ func (app *app) registerGrpc(ctx context.Context) error {
 		return err
 	}
 
-	app.logger.Info("[app] grpc service registered", zap.Any("service_instance", app.grpcServiceInstance))
+	app.logger.Info("[app] grpc service registered", "service_instance", app.grpcServiceInstance)
 	return nil
 }
 

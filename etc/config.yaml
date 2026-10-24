@@ -2,6 +2,19 @@ profile:
   env: dev
 
 synp:
+  # 运维管理端口 ( /metrics + /debug/pprof )
+  admin:
+    addr: ":9090"
+
+  # 日志配置
+  # mode:  dev ( 单行紧凑格式 ) | prod ( JSON，面向采集 )
+  # level: debug | info | warn | error
+  # color: auto | always | never ( 仅 dev 生效 )
+  # file:  可选追加写日志文件路径
+  log:
+    mode: dev
+    level: info
+
   # WebSocket 配置
   websocket:
     host: 0.0.0.0
@@ -9,6 +22,16 @@ synp:
     # 连接建立后等待首帧 AUTH 的超时时间 ( 单位: 毫秒 )，
     # 超时未鉴权的连接由网关关闭。
     auth_timeout_ms: 15000
+
+    # 最大并发连接数 ( 0 使用默认值 50000 )。
+    max_connections: 50000
+
+    # 空闲连接扫描 ( 仅关闭启用了 x-auto-close 的连接 )。
+    idle_scan_interval: 30s
+    idle_timeout: 2m
+
+    # 优雅关闭时等待存量连接排空的超时时间。
+    shutdown_drain_timeout: 10s
     compression:
       enabled: true
       # 服务端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
@@ -19,6 +42,8 @@ synp:
       client_max_window_bits: 15
       client_no_context_takeover: false
       level: 6
+      # 小于该大小的消息不压缩 ( 压缩开销高于收益 )。
+      min_compress_size: 256
 
   grpc:
     name: synp-gateway
@@ -54,7 +79,10 @@ synp:
 
     # 连接管理器配置
     manager:
+      # 鉴权前读超时 ( AUTH 超时兜底 )。
       read_timeout: 15s
+      # 鉴权后读超时 ( 应用层心跳保活，长超时减少 deadline 唤醒 )。
+      established_read_timeout: 90s
       write_timeout: 10s
       init_retry_interval: 1s
       max_retry_interval: 5s
@@ -62,6 +90,8 @@ synp:
       send_buffer_size: 256
       receive_buffer_size: 256
       close_timeout: 1s
+      # 入站数据帧大小上限 ( 超限断连，防 OOM )，0 使用默认 64KiB。
+      max_message_bytes: 65536
 
   # 消息处理器配置
   message_handler:
@@ -70,6 +100,9 @@ synp:
       on_receive_timeout: 3s
     sync:
       timeout: 10s
+    notify:
+      # NOTIFY 帧发送入队等待上限，超时丢弃 ( 通知可丢 )。
+      enqueue_timeout: 200ms
 
   # 网关事件消费者配置
   gateway:

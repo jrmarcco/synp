@@ -3,6 +3,7 @@ package ws
 import (
 	"bytes"
 	"errors"
+	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -12,8 +13,8 @@ import (
 	"github.com/gobwas/ws/wsflate"
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/synp/internal/pkg/compression"
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/session"
-	"go.uber.org/zap"
 )
 
 var ErrInvalidDeviceType = errors.New("invalid device type")
@@ -28,7 +29,7 @@ var _ synp.Upgrader = (*Upgrader)(nil)
 type Upgrader struct {
 	compressionConfig compression.Config
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 func (u *Upgrader) Name() string {
@@ -73,7 +74,7 @@ func (u *Upgrader) newCompressionExtension() *wsflate.Extension {
 	// 启用压缩时，创建压缩扩展。
 	params := u.compressionConfig.ToParamters()
 	ext := &wsflate.Extension{Parameters: params}
-	u.logger.Info("[upgrader] compression enabled", zap.Any("params", params))
+	u.logger.Info("[upgrader] compression enabled", "params", params)
 	return ext
 }
 
@@ -227,9 +228,17 @@ func (u *Upgrader) finalizeCompressionState(ext *wsflate.Extension, clientReques
 		state.Ext = ext
 		state.Params = params
 
+		// 压缩级别与最小压缩阈值来自配置，
+		// 经 State 传递到连接的出站压缩器。
+		state.Level = u.compressionConfig.Level
+		state.MinCompressSize = u.compressionConfig.MinCompressSize
+		if state.MinCompressSize <= 0 {
+			state.MinCompressSize = compression.DefaultMinCompressSize
+		}
+
 		u.logger.Info(
 			"[upgrader] successfully negotiated compression",
-			zap.Any("negotiated_params", params),
+			"negotiated_params", params,
 		)
 		return
 	}
@@ -266,15 +275,15 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 	default:
 		u.logger.Warn(
 			"[upgrader] invalid device type, using unknown",
-			zap.String("device", string(device)),
+			"device", string(device),
 		)
 		return session.DeviceUnknown
 	}
 }
 
-func NewUpgrader(compressionConfig compression.Config, logger *zap.Logger) *Upgrader {
+func NewUpgrader(compressionConfig compression.Config) *Upgrader {
 	return &Upgrader{
 		compressionConfig: compressionConfig,
-		logger:            logger,
+		logger:            logging.For("ws.upgrader"),
 	}
 }

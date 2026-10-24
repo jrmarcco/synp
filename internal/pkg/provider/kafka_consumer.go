@@ -8,13 +8,12 @@ import (
 	"github.com/jrmarcco/synp/internal/ws/gateway"
 	"github.com/jrmarcco/xgrpc/register"
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 )
 
-func newKafkaConsumers(factory xconsumer.ConsumerFactory, si register.ServiceInstance, logger *zap.Logger) (map[string]*gateway.Consumer, error) {
+func newKafkaConsumers(factory xconsumer.ConsumerFactory, si register.ServiceInstance) (map[string]*gateway.Consumer, error) {
 	consumers := make(map[string]*gateway.Consumer)
 
-	notifyMessageConsumer, err := notifyMessageConsumer(factory, si, logger)
+	notifyMessageConsumer, err := notifyMessageConsumer(factory, si)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create notify message consumer: %w", err)
 	}
@@ -27,7 +26,7 @@ func newKafkaConsumers(factory xconsumer.ConsumerFactory, si register.ServiceIns
 //
 // 通知 topic 为广播消费：每个网关节点独立消费全量，
 // 因此 group_id 需按节点唯一化 ( 配置的 group_id + 本节点服务地址 )。
-func notifyMessageConsumer(factory xconsumer.ConsumerFactory, si register.ServiceInstance, logger *zap.Logger) (*gateway.Consumer, error) {
+func notifyMessageConsumer(factory xconsumer.ConsumerFactory, si register.ServiceInstance) (*gateway.Consumer, error) {
 	type config struct {
 		Topic         string        `mapstructure:"topic"`
 		GroupID       string        `mapstructure:"group_id"`
@@ -48,6 +47,5 @@ func notifyMessageConsumer(factory xconsumer.ConsumerFactory, si register.Servic
 		cfg.HandleTimeout,
 
 		factory,
-		logger,
 	)
 }

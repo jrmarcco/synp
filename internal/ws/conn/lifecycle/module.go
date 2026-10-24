@@ -10,7 +10,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 var ConnLifecycleFxModule = fx.Module(
@@ -33,8 +32,6 @@ type connHandlerFxParams struct {
 	NMsgHandler  notify.NMsgHandler
 
 	ConnRegistry synp.ConnRegistry
-
-	Logger *zap.Logger
 }
 
 func newConnLifecycleHandler(params connHandlerFxParams) (*Handler, error) {
@@ -56,6 +53,5 @@ func newConnLifecycleHandler(params connHandlerFxParams) (*Handler, error) {
 		params.NMsgHandler,
 		params.UMsgHandlers,
 		params.ConnRegistry,
-		params.Logger,
 	), nil
 }

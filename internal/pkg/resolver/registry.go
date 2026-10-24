@@ -8,9 +8,10 @@ package resolver
 
 import (
 	"context"
+	"log/slog"
 
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/xgrpc/register"
-	"go.uber.org/zap"
 	"google.golang.org/grpc/resolver"
 )
 
@@ -24,10 +25,13 @@ var (
 // RegistryResolverBuilder 基于 register.Registry 的 resolver builder。
 type RegistryResolverBuilder struct {
 	registry register.Registry
-	logger   *zap.Logger
+	logger   *slog.Logger
 }
 
-func NewRegistryResolverBuilder(registry register.Registry, logger *zap.Logger) *RegistryResolverBuilder {
+func NewRegistryResolverBuilder(registry register.Registry, logger *slog.Logger) *RegistryResolverBuilder {
+	if logger == nil {
+		logger = logging.For("resolver")
+	}
 	return &RegistryResolverBuilder{
 		registry: registry,
 		logger:   logger,
@@ -75,7 +79,7 @@ type registryResolver struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
 // watch 订阅服务实例变更，每次通知后重新拉取全量快照。
@@ -101,8 +105,8 @@ func (r *registryResolver) resolve() {
 	if err != nil {
 		r.logger.Error(
 			"[resolver] failed to list services",
-			zap.String("service_name", r.serviceName),
-			zap.Error(err),
+			"service_name", r.serviceName,
+			"error", err,
 		)
 		return
 	}
@@ -118,9 +122,9 @@ func (r *registryResolver) resolve() {
 	if err = r.clientConn.UpdateState(resolver.State{Addresses: addresses}); err != nil {
 		r.logger.Error(
 			"[resolver] failed to update state",
-			zap.String("service_name", r.serviceName),
-			zap.Int("instance_cnt", len(addresses)),
-			zap.Error(err),
+			"service_name", r.serviceName,
+			"instance_cnt", len(addresses),
+			"error", err,
 		)
 	}
 }

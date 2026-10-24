@@ -9,12 +9,20 @@ import (
 	"math/big"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	defaultJWKSRefreshInterval = 10 * time.Minute
-	defaultJWKSTimeout         = 5 * time.Second
+	defaultJWKSRefreshTimeout  = 5 * time.Second
+
+	// negativeCacheTTL 为刷新失败的负缓存时长。
+	// 重连风暴下大量 AUTH 携带未知 kid 时，
+	// 失败结果短时缓存可防止对 JWKS 端点的群体冲击。
+	negativeCacheTTL = 30 * time.Second
 )
 
 var ErrKidNotFound = fmt.Errorf("jwks: kid not found")
@@ -47,6 +55,13 @@ type JWKSClient struct {
 	mu   sync.RWMutex
 	keys map[string]*rsa.PublicKey
 
+	// refreshGroup 合并并发的显式刷新 ( 缓存未命中触发 )。
+	refreshGroup singleflight.Group
+
+	// lastRefreshFailedAt 为最近一次刷新失败的时间 ( 负缓存 )，
+	// 窗口内不再发起刷新，防止重连风暴冲击 JWKS 端点。
+	lastRefreshFailedAt atomic.Value // time.Time
+
 	cancel context.CancelFunc
 	closed chan struct{}
 }
@@ -60,7 +75,7 @@ func NewJWKSClient(endpoint string, refreshInterval time.Duration) *JWKSClient {
 		endpoint:        endpoint,
 		refreshInterval: refreshInterval,
 		httpClient: &http.Client{
-			Timeout: defaultJWKSTimeout,
+			Timeout: defaultJWKSRefreshTimeout,
 		},
 
 		keys: make(map[string]*rsa.PublicKey),
@@ -114,7 +129,16 @@ func (c *JWKSClient) Close() {
 }
 
 // Refresh 拉取并替换整个公钥集。
+// 失败会记录负缓存时间戳，窗口内的显式刷新 ( 缓存未命中触发 ) 被跳过。
 func (c *JWKSClient) Refresh(ctx context.Context) error {
+	if err := c.fetch(ctx); err != nil {
+		c.lastRefreshFailedAt.Store(time.Now())
+		return err
+	}
+	return nil
+}
+
+func (c *JWKSClient) fetch(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("jwks: failed to create request: %w", err)
@@ -151,11 +175,15 @@ func (c *JWKSClient) Refresh(ctx context.Context) error {
 	c.mu.Lock()
 	c.keys = keys
 	c.mu.Unlock()
+
+	c.lastRefreshFailedAt.Store(time.Time{})
 	return nil
 }
 
 // KeyFunc 返回 kid 对应的 RSA 公钥。
-// 缓存未命中时同步刷新一次，用于容忍新公钥刚轮换、本地缓存尚未更新的窗口。
+// 缓存未命中时经 singleflight 合并同步刷新一次，
+// 用于容忍新公钥刚轮换、本地缓存尚未更新的窗口；
+// 重连风暴下并发未命中只产生一次端点请求。
 func (c *JWKSClient) KeyFunc(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	c.mu.RLock()
 	pubKey, ok := c.keys[kid]
@@ -164,8 +192,8 @@ func (c *JWKSClient) KeyFunc(ctx context.Context, kid string) (*rsa.PublicKey, e
 		return pubKey, nil
 	}
 
-	if err := c.Refresh(ctx); err != nil {
-		return nil, fmt.Errorf("jwks: failed to refresh on cache miss: %w", err)
+	if err := c.refreshOnce(); err != nil {
+		return nil, err
 	}
 
 	c.mu.RLock()
@@ -175,6 +203,28 @@ func (c *JWKSClient) KeyFunc(ctx context.Context, kid string) (*rsa.PublicKey, e
 		return pubKey, nil
 	}
 	return nil, fmt.Errorf("%w: %s", ErrKidNotFound, kid)
+}
+
+// refreshOnce 合并并发的显式刷新，并跳过负缓存窗口内的重复尝试。
+func (c *JWKSClient) refreshOnce() error {
+	// 负缓存窗口内不再冲击端点 ( 定期刷新 goroutine 稍后会重试 )。
+	if failedAt, ok := c.lastRefreshFailedAt.Load().(time.Time); ok && !failedAt.IsZero() {
+		if time.Since(failedAt) < negativeCacheTTL {
+			return fmt.Errorf("jwks: refresh skipped within negative cache window")
+		}
+	}
+
+	_, err, _ := c.refreshGroup.Do("refresh", func() (any, error) {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), defaultJWKSRefreshTimeout)
+		defer cancel()
+
+		// 不使用调用方 ctx: 鉴权请求的取消不应中断共享的刷新。
+		return nil, c.Refresh(refreshCtx)
+	})
+	if err != nil {
+		return fmt.Errorf("jwks: failed to refresh on cache miss: %w", err)
+	}
+	return nil
 }
 
 // parseRSAJWK 将 JWK 的 n / e ( base64url ) 解析为 rsa.PublicKey。

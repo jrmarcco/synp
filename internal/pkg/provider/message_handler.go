@@ -56,6 +56,15 @@ func newConversationSyncMsgHandler(syncCaller upstream.SyncCaller, pushFunc mess
 	return upstream.NewConversationSyncMsgHandler(syncCaller, cfg.Timeout, pushFunc), nil
 }
 
-func newNotifyMsgHandler(pushFunc message.PushFunc) *notify.NotifyMsgHandler {
-	return notify.NewNotifyMsgHandler(pushFunc)
+func newNotifyMsgHandler(pushFunc message.PushFunc) (*notify.NotifyMsgHandler, error) {
+	type config struct {
+		EnqueueTimeout time.Duration `mapstructure:"enqueue_timeout"`
+	}
+
+	cfg := config{}
+	if err := viper.UnmarshalKey("synp.message_handler.notify", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal notify message handler config: %w", err)
+	}
+
+	return notify.NewNotifyMsgHandler(pushFunc, cfg.EnqueueTimeout), nil
 }

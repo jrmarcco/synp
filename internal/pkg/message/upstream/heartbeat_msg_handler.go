@@ -2,8 +2,9 @@ package upstream
 
 import (
 	"context"
-	"log/slog"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
@@ -30,7 +31,7 @@ func NewHeartbeatMsgHandler(connRegistry synp.ConnRegistry, pushFunc message.Pus
 }
 
 func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
-	slog.Debug(
+	logging.For("heartbeat-msg-handler").Debug(
 		"[heartbeat-msg-handler] received heartbeat message",
 		"conn_id", conn.ID(),
 		"message", msg.String(),
@@ -40,9 +41,9 @@ func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) err
 	ctx, cancel := context.WithTimeout(context.Background(), defaultHeartbeatTimeout)
 	defer cancel()
 
-	if err := h.connRegistry.Heartbeat(ctx, conn.Session().User()); err != nil {
+	if err := h.connRegistry.Heartbeat(ctx, conn.Session().User(), conn.ID()); err != nil {
 		// 刷新失败不影响心跳应答，只影响分布式路由。
-		slog.Warn(
+		logging.For("heartbeat-msg-handler").Warn(
 			"[heartbeat-msg-handler] failed to refresh connection registry ttl",
 			"conn_id", conn.ID(),
 			"error", err,
@@ -50,7 +51,10 @@ func (h *HeartbeatMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) err
 	}
 
 	// 将心跳包直接返回给前端 ( ping & pong )。
-	return h.pushFunc(conn, msg)
+	replyCtx, cancel := replyCtx()
+	defer cancel()
+
+	return h.pushFunc(replyCtx, conn, msg)
 }
 
 func (h *HeartbeatMsgHandler) CmdType() commonv1.CommandType {

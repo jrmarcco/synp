@@ -3,13 +3,15 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
 	"github.com/jrmarcco/synp/internal/pkg/message"
+	"github.com/jrmarcco/synp/internal/pkg/metrics"
 	"github.com/jrmarcco/synp/internal/pkg/xmq"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xproducer"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -65,7 +67,7 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 
 	body, err := protojson.Marshal(ackPayload)
 	if err != nil {
-		slog.Error(
+		logging.For("frontend-msg-handler").Error(
 			"[frontend-msg-handler] failed to marshal ack payload",
 			"conn_id", conn.ID(),
 			"error", err,
@@ -76,7 +78,10 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 	// 向前端发送 ACK 消息。
 	// UPSTREAM_ACK 仅表示网关已接收该帧，不代表业务处理成功；
 	// 业务层面的处理结果通过同步链路 ( NOTIFY -> SYNC ) 获得。
-	return h.pushFunc(conn, &messagev1.Message{
+	replyCtx, cancel := replyCtx()
+	defer cancel()
+
+	return h.pushFunc(replyCtx, conn, &messagev1.Message{
 		CommandType: commonv1.CommandType_COMMAND_TYPE_UPSTREAM_ACK,
 		MessageId:   msg.GetMessageId(),
 		Body:        body,
@@ -104,7 +109,7 @@ func (h *FrontendMsgHandler) forwardToBackend(conn synp.Conn, msg *messagev1.Mes
 
 	val, err := protojson.Marshal(upstreamMsg)
 	if err != nil {
-		slog.Error(
+		logging.For("frontend-msg-handler").Error(
 			"[frontend-msg-handler] failed to marshal upstream message",
 			"conn_id", conn.ID(),
 			"error", err,
@@ -124,8 +129,12 @@ func (h *FrontendMsgHandler) forwardToBackend(conn synp.Conn, msg *messagev1.Mes
 	ctx, cancel := context.WithTimeout(context.Background(), h.onReceiveTimeout)
 	defer cancel()
 
-	if err = h.producer.Produce(ctx, mqMsg); err != nil {
-		slog.Error(
+	start := time.Now()
+	produceErr := h.producer.Produce(ctx, mqMsg)
+	metrics.KafkaProduceDuration.Observe(time.Since(start).Seconds())
+
+	if err = produceErr; err != nil {
+		logging.For("frontend-msg-handler").Error(
 			"[frontend-msg-handler] failed to forward message to backend with message queue",
 			"conn_id", conn.ID(),
 			"error", err,
