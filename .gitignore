@@ -70,3 +70,9 @@ scripts/docker/*/certs/
 scripts/docker/*/data-*/
 scripts/docker/kafka/kafka-*-data/
 scripts/docker/kafka/.env
+
+# 本地联调配置 ( 内联证书, 由 scripts/dev-up.sh 生成 )
+etc/config-joint.yaml
+
+# 构建产物
+bin/
