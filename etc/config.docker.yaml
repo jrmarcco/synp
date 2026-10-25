@@ -135,7 +135,7 @@ jwt:
   audience: synp-gateway
   # JWKS 端点，公钥定期拉取并缓存，token header 的 kid 用于密钥轮换。
   # 指向 backend ( hermet ) 的 web 端口。
-  jwks_endpoint: http://192.168.3.3:10081/.well-known/jwks.json
+  jwks_endpoint: http://192.168.3.127:10081/.well-known/jwks.json
   refresh_interval: 10m
 
 etcd:

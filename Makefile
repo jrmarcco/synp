@@ -61,4 +61,4 @@ image:
 		--build-arg COMMIT="$${COMMIT}" \
 		--build-arg DATE="$${DATE}" \
 		$(if $(GOPROXY),--build-arg GOPROXY=$(GOPROXY)) \
-		-t synp-gateway:"$${VERSION}" .
+		-t synp:"$${VERSION}" .

@@ -1,19 +1,19 @@
-# synp-gateway 容器编排 ( 镜像定义见 scripts/build/Dockerfile )。
+# synp 容器编排 ( 镜像定义见 scripts/build/Dockerfile )。
 #
 # ================================ 镜像构建 ================================
 # 本地构建 ( 二选一 ):
 #   make image                                 # tag = git describe, 经 ldflags 注入版本
-#   SYNP_VERSION=v1.2.3 docker compose build   # tag = synp-gateway:v1.2.3, buildinfo 同源
+#   SYNP_VERSION=v1.2.3 docker compose build   # tag = synp:v1.2.3, buildinfo 同源
 #   ( 国内网络: GOPROXY=https://goproxy.cn,direct 加命令前缀 )
 #
 # ============================ 镜像推送 ( registry ) ============================
-# 镜像名 = ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}, 推仓库只需
+# 镜像名 = ${SYNP_IMAGE:-synp}:${SYNP_VERSION:-dev}, 推仓库只需
 # SYNP_IMAGE 覆盖前缀, 无需修改本文件。
 #
 # Docker Hub:
 #   docker login
-#   SYNP_IMAGE=<dockerhub用户名>/synp-gateway SYNP_VERSION=v1.2.3 docker compose build
-#   SYNP_IMAGE=<dockerhub用户名>/synp-gateway SYNP_VERSION=v1.2.3 docker compose push
+#   SYNP_IMAGE=<dockerhub用户名>/synp SYNP_VERSION=v1.2.3 docker compose build
+#   SYNP_IMAGE=<dockerhub用户名>/synp SYNP_VERSION=v1.2.3 docker compose push
 #
 # 私有仓库 ( 自建 registry / Harbor / 云厂商镜像服务, 换成实际地址 ):
 #   docker login reg.example.com:5000
@@ -21,7 +21,7 @@
 #   SYNP_IMAGE=reg.example.com:5000/synp/gateway SYNP_VERSION=v1.2.3 docker compose push
 #
 #   make image 的产物也可手工推送 ( 两步 ):
-#   docker tag synp-gateway:v1.2.3 reg.example.com:5000/synp/gateway:v1.2.3
+#   docker tag synp:v1.2.3 reg.example.com:5000/synp/gateway:v1.2.3
 #   docker push  reg.example.com:5000/synp/gateway:v1.2.3
 #
 #   ( 注意: 自建 registry 走 HTTP 时, 需在 docker daemon 配置 insecure-registries )
@@ -52,9 +52,9 @@ services:
         VERSION: ${SYNP_VERSION:-dev}
         # 国内网络: GOPROXY=https://goproxy.cn,direct docker compose build
         GOPROXY: "${GOPROXY:-}"
-    # 镜像名 = ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}: 默认与 make image
+    # 镜像名 = ${SYNP_IMAGE:-synp}:${SYNP_VERSION:-dev}: 默认与 make image
     # 的 tag 命名保持一致; 推送/拉取仓库时用 SYNP_IMAGE 覆盖前缀 ( 见文件头说明 )。
-    image: ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}
+    image: ${SYNP_IMAGE:-synp}:${SYNP_VERSION:-dev}
 
     container_name: synp
     hostname: synp

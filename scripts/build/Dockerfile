@@ -57,6 +57,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:9090/healthz || exit 1
 
 # 配置文件不打包进镜像，运行时必须挂载:
-#   docker run -v $PWD/etc/config.yaml:/app/etc/config.yaml:ro synp-gateway:<version>
+#   docker run -v $PWD/etc/config.yaml:/app/etc/config.yaml:ro synp:<version>
 ENTRYPOINT ["./synp"]
 CMD ["--config", "etc/config.yaml"]
