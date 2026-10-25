@@ -76,7 +76,10 @@ func NewServerSideWriter(dst io.Writer, compressed bool, level, minCompressSize 
 	messageState.SetCompressed(compressed)
 
 	state := ws.StateServerSide | ws.StateExtended
-	opCode := ws.OpBinary
+	// 下行以 text 帧承载 ( payload 为 protojson 文本 ):
+	// 浏览器 WebSocket.onmessage 对 binary 帧投递 Blob，
+	// 未按帧类型分支处理的客户端会静默丢弃全部下行。
+	opCode := ws.OpText
 
 	rtn := &Writer{
 		writer:          wsutil.NewWriter(dst, state, opCode),

@@ -65,7 +65,7 @@ func (h *FrontendMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) erro
 		ackPayload.ErrorMessage = err.Error()
 	}
 
-	body, err := protojson.Marshal(ackPayload)
+	body, err := message.MarshalBody(ackPayload)
 	if err != nil {
 		logging.For("frontend-msg-handler").Error(
 			"[frontend-msg-handler] failed to marshal ack payload",

@@ -50,8 +50,12 @@ func (u *User) ConnKey() string {
 	return fmt.Sprintf("%d:%d", u.BID, u.UID)
 }
 
+// SessionKey 返回该用户该设备的 session 键。
+//
+// 键必须带 device 维度: 同一用户多设备在线时共享同一个键的话，
+// 任一设备连接关闭都会 Destroy 掉其它设备正在使用的 session。
 func (u *User) SessionKey() string {
-	return fmt.Sprintf("synp:session:%d:%d", u.BID, u.UID)
+	return fmt.Sprintf("synp:session:%d:%d:%s", u.BID, u.UID, u.Device)
 }
 
 // AnonymousSession 是未完成 AUTH 鉴权的连接使用的占位 Session。

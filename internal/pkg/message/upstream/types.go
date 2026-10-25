@@ -2,11 +2,14 @@ package upstream
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jrmarcco/synp"
 	commonv1 "github.com/jrmarcco/synp-api/api/go/common/v1"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 //go:generate mockgen -source=types.go -destination=mock/upstream.mock.go -package=upstreammock -typed Handler
@@ -40,4 +43,23 @@ const defaultReplyEnqueueTimeout = 200 * time.Millisecond
 // replyCtx 返回应答帧发送用的入队超时 context。
 func replyCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultReplyEnqueueTimeout)
+}
+
+// sanitizeSyncError 将后端同步服务的 gRPC 错误转换为客户端可见文案。
+//
+// 仅透出后端有意声明的业务错误 ( InvalidArgument / PermissionDenied 的
+// status message )；超时与内部错误只回通用文案——
+// 原始错误文本 ( 可能含内部实现细节 ) 仅进服务端日志。
+func sanitizeSyncError(prefix string, err error) string {
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.InvalidArgument, codes.PermissionDenied:
+			return fmt.Sprintf("%s: %s", prefix, st.Message())
+		case codes.DeadlineExceeded, codes.Canceled:
+			return fmt.Sprintf("%s: timed out, please retry", prefix)
+		default:
+			return fmt.Sprintf("%s: internal error, please retry", prefix)
+		}
+	}
+	return fmt.Sprintf("%s: internal error, please retry", prefix)
 }

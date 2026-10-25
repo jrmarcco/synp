@@ -124,19 +124,24 @@ func (h *AuthMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 
 // bindIdentity 鉴权通过后绑定连接身份：
 // 创建 session、绑定连接管理器用户索引、注册连接路由。
+//
+// 顺序必须是先 BindUser 再 Build session: BindUser 顶号关闭旧连接时，
+// 旧连接的 Destroy 会删除同键 session——若新 session 先建会被误删
+// ( 表现为新连接 AUTH 后 session 数据丢失、ACK 发送竞态失败 )。
+// 先踢后建保证新连接拿到的 session 一定在其绑定之后创建。
 func (h *AuthMsgHandler) bindIdentity(conn synp.Conn, user session.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultAuthTimeout)
 	defer cancel()
+
+	if err := h.connManager.BindUser(conn, user); err != nil {
+		return fmt.Errorf("failed to bind user: %w", err)
+	}
 
 	createdSession, _, err := h.sessionBuilder.Build(ctx, user)
 	if err != nil {
 		return fmt.Errorf("failed to build session: %w", err)
 	}
 	conn.BindSession(createdSession)
-
-	if err = h.connManager.BindUser(conn, user); err != nil {
-		return fmt.Errorf("failed to bind user: %w", err)
-	}
 
 	// 注册连接路由 ( 重复注册幂等并刷新 TTL )。
 	// 注册失败不影响连接，只是分布式路由可能缺失。
@@ -161,7 +166,7 @@ func (h *AuthMsgHandler) replyAuthAckBestEffort(conn synp.Conn, messageID, error
 }
 
 func (h *AuthMsgHandler) replyAuthAck(ctx context.Context, conn synp.Conn, messageID string, success bool, errorMessage string) error {
-	body, err := protojson.Marshal(&messagev1.AuthAckPayload{
+	body, err := message.MarshalBody(&messagev1.AuthAckPayload{
 		Success:      success,
 		ErrorMessage: errorMessage,
 	})

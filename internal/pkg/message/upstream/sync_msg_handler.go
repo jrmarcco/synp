@@ -81,7 +81,7 @@ func (h *SyncMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 		)
 		return h.replySyncAck(replyCtx, conn, msg.GetMessageId(), &messagev1.SyncAckPayload{
 			IsSuccess:    false,
-			ErrorMessage: fmt.Sprintf("failed to sync: %v", err),
+			ErrorMessage: sanitizeSyncError("failed to sync", err),
 		})
 	}
 
@@ -92,7 +92,7 @@ func (h *SyncMsgHandler) Handle(conn synp.Conn, msg *messagev1.Message) error {
 }
 
 func (h *SyncMsgHandler) replySyncAck(ctx context.Context, conn synp.Conn, messageID string, payload *messagev1.SyncAckPayload) error {
-	body, err := protojson.Marshal(payload)
+	body, err := message.MarshalBody(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sync ack payload: %w", err)
 	}

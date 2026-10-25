@@ -10,9 +10,16 @@ import (
 	cc "github.com/jrmarcco/synp/internal/pkg/codec"
 	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/metrics"
+	"google.golang.org/protobuf/proto"
 )
 
 var ErrMarshalMessage = errors.New("failed to marshal message")
+
+// MarshalBody 统一序列化 *_ACK / NOTIFY 帧 body。
+// 零值字段照常输出 ( 见 codec.JSONMarshalOptions )。
+func MarshalBody(msg proto.Message) ([]byte, error) {
+	return cc.JSONMarshalOptions.Marshal(msg)
+}
 
 // PushFunc 将结构化消息编码后经连接发送。
 // ctx 控制发送入队等待 ( 慢客户端保护 )。

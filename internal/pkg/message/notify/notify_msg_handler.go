@@ -2,6 +2,8 @@ package notify
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -11,7 +13,6 @@ import (
 	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/message"
 	"github.com/jrmarcco/synp/internal/pkg/metrics"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // defaultEnqueueTimeout 为 NOTIFY 帧发送入队等待的默认上限。
@@ -44,17 +45,25 @@ func NewNotifyMsgHandler(pushFunc message.PushFunc, enqueueTimeout time.Duration
 }
 
 func (h *NotifyMsgHandler) Handle(ctx context.Context, conns []synp.Conn, notifyMsg *messagev1.NotifyMessage) error {
-	body, err := protojson.Marshal(&messagev1.NotifyPayload{
+	body, err := message.MarshalBody(&messagev1.NotifyPayload{
 		LatestSeq: notifyMsg.GetLatestSeq(),
 	})
 	if err != nil {
 		return err
 	}
 
-	// NOTIFY 帧的 message_id 复用 NotifyMessage 的 message_id，仅用于日志排查。
+	// NOTIFY 帧的 message_id 每次下发独立生成:
+	// 帧唯一 ID 语义要求不可复用触发消息的 UPSTREAM 帧 ID，
+	// 否则客户端无法以 NOTIFY.messageId 做帧关联/去重
+	// ( 同一条消息向多端下发时 NOTIFY 帧并非唯一 )。
+	frameID, err := newFrameID()
+	if err != nil {
+		return err
+	}
+
 	notifyFrame := &messagev1.Message{
 		CommandType: commonv1.CommandType_COMMAND_TYPE_NOTIFY,
-		MessageId:   notifyMsg.GetMessageId(),
+		MessageId:   frameID,
 		Body:        body,
 	}
 
@@ -84,4 +93,13 @@ func (h *NotifyMsgHandler) Handle(ctx context.Context, conns []synp.Conn, notify
 		conn.UpdateActivityTime()
 	}
 	return nil
+}
+
+// newFrameID 生成 NOTIFY 下行帧的唯一 ID ( 随机 hex，仅用于日志排查 )。
+func newFrameID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
