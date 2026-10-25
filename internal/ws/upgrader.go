@@ -3,7 +3,6 @@ package ws
 import (
 	"bytes"
 	"errors"
-	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -28,8 +27,6 @@ var _ synp.Upgrader = (*Upgrader)(nil)
 // 升级阶段只协商压缩扩展并解析设备类型等非敏感参数。
 type Upgrader struct {
 	compressionConfig compression.Config
-
-	logger *slog.Logger
 }
 
 func (u *Upgrader) Name() string {
@@ -74,7 +71,7 @@ func (u *Upgrader) newCompressionExtension() *wsflate.Extension {
 	// 启用压缩时，创建压缩扩展。
 	params := u.compressionConfig.ToParamters()
 	ext := &wsflate.Extension{Parameters: params}
-	u.logger.Info("[upgrader] compression enabled", "params", params)
+	logging.For("upgrader").Info("compression enabled", "params", params)
 	return ext
 }
 
@@ -136,7 +133,7 @@ func (u *Upgrader) negotiateExtensions(
 func (u *Upgrader) validateExtensionHeader(val []byte) ([]byte, bool) {
 	trimmed := bytes.TrimSpace(val)
 	if len(trimmed) == 0 {
-		u.logger.Warn("[upgrader] empty Sec-WebSocket-Extensions is forbidden")
+		logging.For("upgrader").Warn("empty Sec-WebSocket-Extensions is forbidden")
 		return nil, false
 	}
 	return trimmed, true
@@ -211,7 +208,7 @@ func (u *Upgrader) parseHeader(ctx *upgradeContext, key, val []byte) error {
 	// 解析 auto close 参数。
 	if strings.EqualFold(string(key), "x-auto-close") {
 		ctx.autoClose = string(val) == "true"
-		u.logger.Debug("[upgrader] auto close parameter parsed")
+		logging.For("upgrader").Debug("auto close parameter parsed")
 	}
 	return nil
 }
@@ -236,8 +233,8 @@ func (u *Upgrader) finalizeCompressionState(ext *wsflate.Extension, clientReques
 			state.MinCompressSize = compression.DefaultMinCompressSize
 		}
 
-		u.logger.Info(
-			"[upgrader] successfully negotiated compression",
+		logging.For("upgrader").Info(
+			"successfully negotiated compression",
 			"negotiated_params", params,
 		)
 		return
@@ -245,7 +242,7 @@ func (u *Upgrader) finalizeCompressionState(ext *wsflate.Extension, clientReques
 
 	// 客户端未请求压缩时，降级为无压缩是预期行为，不需要告警。
 	if clientRequestedCompression {
-		u.logger.Warn("[upgrader] failed to negotiate compression, downgrade to no compression")
+		logging.For("upgrader").Warn("failed to negotiate compression, downgrade to no compression")
 	}
 }
 
@@ -273,8 +270,8 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 	case session.DeviceMobile, session.DeviceTablet, session.DevicePC:
 		return device
 	default:
-		u.logger.Warn(
-			"[upgrader] invalid device type, using unknown",
+		logging.For("upgrader").Warn(
+			"invalid device type, using unknown",
 			"device", string(device),
 		)
 		return session.DeviceUnknown
@@ -284,6 +281,5 @@ func (u *Upgrader) extractDevice(uri []byte) session.Device {
 func NewUpgrader(compressionConfig compression.Config) *Upgrader {
 	return &Upgrader{
 		compressionConfig: compressionConfig,
-		logger:            logging.For("ws.upgrader"),
 	}
 }

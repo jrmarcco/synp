@@ -8,7 +8,6 @@ package resolver
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/xgrpc/register"
@@ -25,16 +24,11 @@ var (
 // RegistryResolverBuilder 基于 register.Registry 的 resolver builder。
 type RegistryResolverBuilder struct {
 	registry register.Registry
-	logger   *slog.Logger
 }
 
-func NewRegistryResolverBuilder(registry register.Registry, logger *slog.Logger) *RegistryResolverBuilder {
-	if logger == nil {
-		logger = logging.For("resolver")
-	}
+func NewRegistryResolverBuilder(registry register.Registry) *RegistryResolverBuilder {
 	return &RegistryResolverBuilder{
 		registry: registry,
-		logger:   logger,
 	}
 }
 
@@ -59,8 +53,6 @@ func (b *RegistryResolverBuilder) Build(
 
 		ctx:    ctx,
 		cancel: cancel,
-
-		logger: b.logger,
 	}
 
 	// 解析一次初始快照后再进入订阅循环。
@@ -78,8 +70,6 @@ type registryResolver struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	logger *slog.Logger
 }
 
 // watch 订阅服务实例变更，每次通知后重新拉取全量快照。
@@ -103,8 +93,8 @@ func (r *registryResolver) resolve() {
 
 	instances, err := r.registry.ListServices(ctx, r.serviceName)
 	if err != nil {
-		r.logger.Error(
-			"[resolver] failed to list services",
+		logging.For("resolver").Error(
+			"failed to list services",
 			"service_name", r.serviceName,
 			"error", err,
 		)
@@ -120,8 +110,8 @@ func (r *registryResolver) resolve() {
 	}
 
 	if err = r.clientConn.UpdateState(resolver.State{Addresses: addresses}); err != nil {
-		r.logger.Error(
-			"[resolver] failed to update state",
+		logging.For("resolver").Error(
+			"failed to update state",
 			"service_name", r.serviceName,
 			"instance_cnt", len(addresses),
 			"error", err,

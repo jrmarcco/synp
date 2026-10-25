@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -183,8 +182,6 @@ type ConnManager struct {
 	// 序列化同一用户的 BindUser/RemoveConn/RemoveConnByID，
 	// 消除并发顶号时的覆盖与计数泄漏窗口。
 	userLocks [userLockShards]sync.Mutex
-
-	logger *slog.Logger
 }
 
 // userLockShards 为绑定锁分片数。
@@ -224,7 +221,6 @@ func NewConnManager(opts ...option.Opt[ConnManager]) *ConnManager {
 		pending:   &xsync.Map[string, synp.Conn]{},
 		conns:     &xsync.Map[string, *DeviceConns]{},
 		connIndex: &xsync.Map[string, string]{},
-		logger:    logging.For("conn.manager"),
 	}
 
 	option.Apply(cm, opts...)
@@ -252,8 +248,8 @@ func (m *ConnManager) NewConn(ctx context.Context, netConn net.Conn, sess sessio
 	m.connIndex.Store(connID, pendingConnKey)
 	m.connCnt.Add(1)
 
-	m.logger.Debug(
-		"[conn-manager] successfully create connection",
+	logging.For("conn-manager").Debug(
+		"successfully create connection",
 		"conn_id", connID,
 		"device", sess.User().Device,
 	)
@@ -277,8 +273,8 @@ func (m *ConnManager) BindUser(conn synp.Conn, user session.User) error {
 
 		// 检查同一设备是否已有连接，如果有则移除旧连接 ( 顶号 )。
 		if _, exists := m.loadExistingConn(connKey, device); exists {
-			m.logger.Info(
-				"[conn-manager] found existing connection for same device, closing old connection",
+			logging.For("conn-manager").Info(
+				"found existing connection for same device, closing old connection",
 				"conn_key", connKey,
 				"device", string(device),
 				"user", user,
@@ -296,8 +292,8 @@ func (m *ConnManager) BindUser(conn synp.Conn, user session.User) error {
 		m.closeConn(kickedConn)
 	}
 
-	m.logger.Debug(
-		"[conn-manager] successfully bind connection to user",
+	logging.For("conn-manager").Debug(
+		"successfully bind connection to user",
 		"conn_id", conn.ID(),
 		"conn_key", connKey,
 		"device", string(device),
@@ -463,8 +459,8 @@ func (m *ConnManager) removeConnEntry(connKey string, remaining int) {
 
 func (m *ConnManager) closeConn(conn synp.Conn) {
 	if err := conn.Close(); err != nil {
-		m.logger.Warn(
-			"[conn-manager] failed to close connection",
+		logging.For("conn-manager").Warn(
+			"failed to close connection",
 			"conn_id", conn.ID(),
 			"error", err,
 		)

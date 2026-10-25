@@ -3,10 +3,8 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/logging"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xconsumer"
 	"github.com/jrmarcco/synp/internal/pkg/xmq/xprocessor"
 )
@@ -19,8 +17,6 @@ type Consumer struct {
 
 	factory   xconsumer.ConsumerFactory
 	processor *xprocessor.ConsumeProcessor
-
-	logger *slog.Logger
 }
 
 func NewConsumer(
@@ -40,8 +36,6 @@ func NewConsumer(
 		groupID:       groupID,
 		partitions:    partitions,
 		handleTimeout: handleTimeout,
-
-		logger: logging.For("kafka.consumer"),
 	}, nil
 }
 

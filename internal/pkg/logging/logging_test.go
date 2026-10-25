@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -201,5 +203,82 @@ func TestSetupDevAndProdModes(t *testing.T) {
 	}
 	if logging.Enabled(context.Background(), slog.LevelInfo) {
 		t.Fatal("低于配置级别的日志不应启用")
+	}
+}
+
+func TestFileRotation(t *testing.T) {
+	t.Parallel()
+
+	previous := slog.Default()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "hermet.log")
+
+	// 1MB 切割 + 保留 2 份 + 压缩，写入超过 1MB 必然触发轮转。
+	cleanup := Setup(Options{
+		Mode:       ModeProd,
+		Level:      slog.LevelDebug,
+		File:       logPath,
+		MaxSizeMB:  1,
+		MaxBackups: 2,
+		Compress:   true,
+	})
+	defer cleanup()
+
+	logger := For("rotation-test")
+	const rounds = 6000
+	const payload = "rotation payload for exceeding one megabyte across writes 0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz"
+	for i := range rounds {
+		logger.Info(payload, "round", i)
+	}
+	cleanup()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("读取日志目录失败: %v", err)
+	}
+
+	var rotated int
+	for _, e := range entries {
+		if e.Name() != "hermet.log" {
+			rotated++
+		}
+	}
+	if rotated == 0 {
+		t.Fatalf("写入超过 MaxSizeMB 应产生轮转备份文件，目录内容: %v", entries)
+	}
+
+	// 主日志文件仍应存在且非空。
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("主日志文件应存在: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("主日志文件不应为空")
+	}
+}
+
+func TestFileParentDirCreation(t *testing.T) {
+	t.Parallel()
+
+	previous := slog.Default()
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+	})
+
+	dir := t.TempDir()
+	// 深层父目录不存在，Setup 应自动创建。
+	logPath := filepath.Join(dir, "nested", "logs", "hermet.log")
+
+	cleanup := Setup(Options{Mode: ModeDev, File: logPath, Level: slog.LevelInfo})
+	defer cleanup()
+
+	For("dir-check").Info("写入深层目录")
+
+	if _, err := os.Stat(logPath); err != nil {
+		t.Fatalf("父目录应被自动创建且文件可写: %v", err)
 	}
 }

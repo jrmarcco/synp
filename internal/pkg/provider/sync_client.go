@@ -37,7 +37,7 @@ func newSyncServiceConn(registry register.Registry, lifecycle fx.Lifecycle) (*gr
 		return nil, fmt.Errorf("synp.sync_service.service_name is required")
 	}
 
-	resolverBuilder := resolver.NewRegistryResolverBuilder(registry, logging.For("resolver"))
+	resolverBuilder := resolver.NewRegistryResolverBuilder(registry)
 
 	dialOpts := []grpc.DialOption{
 		grpc.WithResolvers(resolverBuilder),

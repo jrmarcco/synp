@@ -14,15 +14,20 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// logFilePerm 日志文件权限。
-const logFilePerm os.FileMode = 0o644
+// 日志文件/目录权限。
+const (
+	logFilePerm os.FileMode = 0o644
+	logDirPerm  os.FileMode = 0o755
+)
 
 // componentKey 组件属性键: For 注入、ConsoleHandler 据此渲染组件列。
 const componentKey = "component"
@@ -48,7 +53,24 @@ type Options struct {
 
 	// File 为可选的追加写日志文件路径，空串不落盘。
 	File string
+
+	// MaxSizeMB 为单文件大小上限 ( MB )，超过即切割轮转，<=0 使用默认值。
+	MaxSizeMB int
+
+	// MaxBackups 为保留的旧文件份数，超出删除，0 保留全部。
+	MaxBackups int
+
+	// MaxAgeDays 为旧文件保留天数，超出删除，0 不限。
+	MaxAgeDays int
+
+	// Compress 为旧文件 gzip 压缩。
+	Compress bool
 }
+
+// 轮转默认值 ( Options 对应字段缺省时使用 )。
+const (
+	defaultMaxSizeMB = 100
+)
 
 // For 返回携带组件标识的日志器 ( 组件即日志的功能域标签，如 ws.server、conn.registry )。
 // 每次即时解析 slog.Default()，测试期替换全局 handler 后新调用即刻生效。
@@ -70,8 +92,12 @@ func Truncate(s string, limit int) string {
 	return string(runes[:limit]) + fmt.Sprintf("…(+%d)", len(runes)-limit)
 }
 
-// Setup 按参数装配全局日志 ( dev 终端单行 / prod JSON，可选文件双写 )，
+// Setup 按参数装配全局日志 ( dev 终端单行 / prod JSON，可选文件双写 + 按大小轮转 )，
 // 返回的 cleanup 需在进程退出前调用以冲刷并关闭文件句柄。
+//
+// 落盘文件由 lumberjack 承载轮转: 超过 MaxSizeMB 切割为 <name>-<ts>.<ext>[.gz]
+// 旧文件，按 MaxBackups / MaxAgeDays 清理，
+// Compress 控制压缩——生产落盘场景由此不会无限增长。
 func Setup(opts Options) func() {
 	var handler slog.Handler
 	closers := make([]func(), 0, 2)
@@ -79,7 +105,7 @@ func Setup(opts Options) func() {
 	if opts.Mode == ModeProd {
 		handler = newProdHandler(os.Stdout, opts.Level)
 		if path := opts.File; path != "" {
-			if fileHandler, closer, err := newProdFileHandler(path, opts.Level); err == nil {
+			if fileHandler, closer, err := newProdFileHandler(path, opts); err == nil {
 				handler = multiHandler{handlers: []slog.Handler{handler, fileHandler}}
 				closers = append(closers, closer)
 			} else {
@@ -91,12 +117,12 @@ func Setup(opts Options) func() {
 		color := shouldColor(opts.Color)
 		handler = NewConsoleHandler(os.Stdout, opts.Level, color)
 		if path := opts.File; path != "" {
-			if file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFilePerm); err == nil { //nolint:gosec // 路径来自运维显式配置，非不可信输入
+			if writer, closer, err := newRotatingWriter(path, opts); err == nil {
 				handler = multiHandler{handlers: []slog.Handler{
 					handler,
-					NewConsoleHandler(file, opts.Level, false),
+					NewConsoleHandler(writer, opts.Level, false),
 				}}
-				closers = append(closers, func() { _ = file.Close() })
+				closers = append(closers, closer)
 			} else {
 				slog.Error("日志文件打开失败", "path", path, "error", err)
 			}
@@ -118,13 +144,36 @@ func newProdHandler(w io.Writer, level slog.Level) slog.Handler {
 	return zapslog.NewHandler(newZapCore(w, level))
 }
 
-// newProdFileHandler 创建生产模式的落盘 handler。
-func newProdFileHandler(path string, level slog.Level) (slog.Handler, func(), error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFilePerm) //nolint:gosec // 路径来自运维显式配置，非不可信输入
+// newProdFileHandler 创建生产模式的落盘 handler ( 轮转 writer )。
+func newProdFileHandler(path string, opts Options) (slog.Handler, func(), error) {
+	writer, closer, err := newRotatingWriter(path, opts)
 	if err != nil {
 		return nil, nil, err
 	}
-	return newProdHandler(file, level), func() { _ = file.Close() }, nil
+	return newProdHandler(writer, opts.Level), closer, nil
+}
+
+// newRotatingWriter 创建 lumberjack 轮转 writer:
+// 按大小切割 + 保留份数/天数清理 + 可选压缩。首次写入即创建文件 ( 含父目录 )。
+func newRotatingWriter(path string, opts Options) (*lumberjack.Logger, func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), logDirPerm); err != nil {
+		return nil, nil, fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	maxSizeMB := opts.MaxSizeMB
+	if maxSizeMB <= 0 {
+		maxSizeMB = defaultMaxSizeMB
+	}
+
+	writer := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    maxSizeMB,
+		MaxBackups: opts.MaxBackups,
+		MaxAge:     opts.MaxAgeDays,
+		Compress:   opts.Compress,
+	}
+
+	return writer, func() { _ = writer.Close() }, nil
 }
 
 // newZapCore 构建 JSON 编码的 zap core，级别阈值与 slog 对齐。

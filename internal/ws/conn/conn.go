@@ -3,7 +3,6 @@ package conn
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -88,8 +87,6 @@ type Conn struct {
 
 	closeOnce sync.Once
 	closeErr  error
-
-	logger *slog.Logger
 }
 
 func ConnWithReadTimeout(readTimeout time.Duration) option.Opt[Conn] {
@@ -197,8 +194,6 @@ func NewConn(
 
 		ctx:        ctx,
 		cancelFunc: cancel,
-
-		logger: logging.For("conn"),
 	}
 
 	option.Apply(c, opts...)
@@ -278,8 +273,8 @@ func (c *Conn) trySend(payload []byte) bool {
 			return true
 		}
 
-		c.logger.Error(
-			"[conn] failed to send message to client",
+		logging.For("conn").Error(
+			"failed to send message to client",
 			"conn_id", c.id,
 			"payload_len", len(payload),
 			"compression_state", c.compressionState,
@@ -293,8 +288,8 @@ func (c *Conn) trySend(payload []byte) bool {
 			duration, ok := retryStrategy.Next()
 			if !ok {
 				// 重试达到上限。
-				c.logger.Error(
-					"[conn] failed to resend message to client, retry reach max",
+				logging.For("conn").Error(
+					"failed to resend message to client, retry reach max",
 					"conn_id", c.id,
 					"compression_state", c.compressionState,
 					"user", c.Session().User(),
@@ -353,8 +348,8 @@ func (c *Conn) readLoop() {
 			var wsErr wsutil.ClosedError
 			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd || wsErr.Code == ws.StatusGoingAway) {
 				// 客户端关闭连接，记录日志直接返回。
-				c.logger.Debug(
-					"[conn] client closed connection",
+				logging.For("conn").Debug(
+					"client closed connection",
 					"conn_id", c.id,
 					"compression_state", c.compressionState,
 					"user", c.Session().User(),
@@ -363,8 +358,8 @@ func (c *Conn) readLoop() {
 			}
 
 			// 其他错误，直接返回。
-			c.logger.Error(
-				"[conn] failed to read message from client",
+			logging.For("conn").Error(
+				"failed to read message from client",
 				"conn_id", c.id,
 				"compression_state", c.compressionState,
 				"user", c.Session().User(),
@@ -441,8 +436,8 @@ func (c *Conn) TryCloseIfSlow(minOverflow int32) bool {
 		return false
 	}
 
-	c.logger.Warn(
-		"[conn] close slow client because of continuous enqueue overflow",
+	logging.For("conn").Warn(
+		"close slow client because of continuous enqueue overflow",
 		"conn_id", c.id,
 		"overflow_cnt", c.enqueueOverflowCnt.Load(),
 	)
@@ -478,8 +473,8 @@ func (c *Conn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 
 	if err := c.Close(); err != nil {
 		// 关闭直白只记录日志。
-		c.logger.Error(
-			"[conn] failed to close connection",
+		logging.For("conn").Error(
+			"failed to close connection",
 			"conn_id", c.id,
 			"user", c.Session().User(),
 			"error", err,

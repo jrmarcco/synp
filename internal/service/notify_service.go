@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"log/slog"
 
 	"github.com/jrmarcco/synp"
 	messagev1 "github.com/jrmarcco/synp-api/api/go/message/v1"
@@ -32,8 +31,6 @@ type DefaultNotifyService struct {
 	nMsgHandler notify.NMsgHandler
 
 	connManager synp.ConnManager
-
-	logger *slog.Logger
 }
 
 func NewDefaultNotifyService(
@@ -43,7 +40,6 @@ func NewDefaultNotifyService(
 	return &DefaultNotifyService{
 		nMsgHandler: nMsgHandler,
 		connManager: connManager,
-		logger:      logging.For("notify-service"),
 	}
 }
 
@@ -53,8 +49,8 @@ func (s *DefaultNotifyService) Notify(ctx context.Context, msg *messagev1.Notify
 		UID: msg.GetReceiverId(),
 	})
 	if !ok {
-		s.logger.Debug(
-			"[notify-service] user not online on this node",
+		logging.For("notify-service").Debug(
+			"user not online on this node",
 			"business_id", msg.GetBusinessId(),
 			"receiver_id", msg.GetReceiverId(),
 			"message_id", msg.GetMessageId(),
@@ -63,8 +59,8 @@ func (s *DefaultNotifyService) Notify(ctx context.Context, msg *messagev1.Notify
 	}
 
 	if err := s.nMsgHandler.Handle(ctx, conns, msg); err != nil {
-		s.logger.Error(
-			"[notify-service] failed to notify user",
+		logging.For("notify-service").Error(
+			"failed to notify user",
 			"business_id", msg.GetBusinessId(),
 			"receiver_id", msg.GetReceiverId(),
 			"message_id", msg.GetMessageId(),

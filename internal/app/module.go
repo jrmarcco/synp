@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jrmarcco/synp/internal/pkg/logging"
-
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
 	"github.com/spf13/viper"
@@ -69,8 +67,6 @@ func startApp(params appFxParams) error {
 		grpcRegisterTimeout: cfg.Timeout,
 
 		webSocketServer: params.WebSocketServer,
-
-		logger: logging.For("app"),
 	}
 
 	params.Lifecycle.Append(fx.Hook{

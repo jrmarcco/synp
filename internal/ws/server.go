@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -75,8 +74,6 @@ type Server struct {
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-
-	logger *slog.Logger
 }
 
 func NewServer(
@@ -107,8 +104,6 @@ func NewServer(
 
 		ctx:        ctx,
 		cancelFunc: cancel,
-
-		logger: logging.For("ws.server"),
 	}
 	s.acceptNewConn.Store(true)
 
@@ -128,7 +123,7 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	s.logger.Info("[server] ws server started", "addr", s.config.Address())
+	logging.For("server").Info("ws server started", "addr", s.config.Address())
 	s.listener = ln
 
 	go s.acceptConn()
@@ -136,7 +131,7 @@ func (s *Server) Start() error {
 
 	// 初始化网关业务消息消费者。
 	if err := s.initConsumers(); err != nil {
-		s.logger.Error("[server] failed to initialize consumers", "error", err)
+		logging.For("server").Error("failed to initialize consumers", "error", err)
 		return err
 	}
 	return nil
@@ -161,11 +156,11 @@ func (s *Server) normalizeParams() {
 // acceptConn 接收 WebSocket 连接。
 func (s *Server) acceptConn() {
 	for {
-		s.logger.Debug("[server] starting to accept new connection")
+		logging.For("server").Debug("starting to accept new connection")
 
 		// 判断是否接收新连接。
 		if !s.acceptNewConn.Load() {
-			s.logger.Info("[server] server is not accepting new connections")
+			logging.For("server").Info("server is not accepting new connections")
 			return
 		}
 
@@ -173,8 +168,8 @@ func (s *Server) acceptConn() {
 		if !s.connLimiter.Acquire() {
 			next := s.backoff.NextBackOff()
 
-			s.logger.Warn(
-				"[server] connection limit reached, reject new connection",
+			logging.For("server").Warn(
+				"connection limit reached, reject new connection",
 				"max_connections", s.connLimiter.Max(),
 				"current_connections", s.connLimiter.Curr(),
 				"next_backoff", next,
@@ -191,7 +186,7 @@ func (s *Server) acceptConn() {
 			// 接收连接失败，归还配额。
 			s.connLimiter.Release()
 
-			s.logger.Error("[server] failed to accept connection", "error", err)
+			logging.For("server").Error("failed to accept connection", "error", err)
 			if errors.Is(err, net.ErrClosed) {
 				// net.ErrClosed 表示 listener 已关闭，此时可以退出。
 				return
@@ -222,7 +217,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer func() {
 		err := conn.Close()
 		if err != nil && !errors.Is(err, net.ErrClosed) {
-			s.logger.Warn("[server] failed to close connection", "error", err)
+			logging.For("server").Warn("failed to close connection", "error", err)
 		}
 	}()
 
@@ -230,8 +225,8 @@ func (s *Server) handleConn(conn net.Conn) {
 	sess, compressionState, err := s.upgrader.Upgrade(conn)
 	if err != nil {
 		metrics.HandshakeTotal.WithLabelValues("failure").Inc()
-		s.logger.Error(
-			"[server] failed to upgrade connection from HTTP to WebSocket",
+		logging.For("server").Error(
+			"failed to upgrade connection from HTTP to WebSocket",
 			"error", err,
 		)
 		return
@@ -243,7 +238,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	// 新协议下连接建立时身份未知 ( 首帧 AUTH 完成鉴权 )，创建的是匿名连接。
 	synpConn, err := s.connManager.NewConn(s.ctx, conn, sess, compressionState)
 	if err != nil {
-		s.logger.Error("[server] failed to create synp connection", "error", err)
+		logging.For("server").Error("failed to create synp connection", "error", err)
 		return
 	}
 
@@ -251,8 +246,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		// 匿名连接与已绑定连接统一按连接 ID 清理。
 		s.connManager.RemoveConnByID(synpConn.ID())
 		if err := synpConn.Close(); err != nil {
-			s.logger.Error(
-				"[server] failed to close synp connection",
+			logging.For("server").Error(
+				"failed to close synp connection",
 				"conn_id", synpConn.ID(),
 				"error", err,
 			)
@@ -261,8 +256,8 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	// 处理 on connect & on disconnect 事件。
 	if err := s.connHandler.OnConnect(synpConn); err != nil {
-		s.logger.Error(
-			"[server] failed to handle on connect lifecycle event",
+		logging.For("server").Error(
+			"failed to handle on connect lifecycle event",
 			"conn_id", synpConn.ID(),
 			"error", err,
 		)
@@ -272,8 +267,8 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 	defer func() {
 		if err := s.connHandler.OnDisconnect(synpConn); err != nil {
-			s.logger.Error(
-				"[server] failed to handle on disconnect lifecycle event",
+			logging.For("server").Error(
+				"failed to handle on disconnect lifecycle event",
 				"conn_id", synpConn.ID(),
 				"error", err,
 			)
@@ -303,8 +298,8 @@ func (s *Server) handleConn(conn net.Conn) {
 
 			if err := s.connHandler.OnReceiveFromFrontend(synpConn, message); err != nil {
 				// 处理前端（业务客户端）发送的消息失败。
-				s.logger.Error(
-					"[server] failed to handle on receive from frontend event",
+				logging.For("server").Error(
+					"failed to handle on receive from frontend event",
 					"error", err,
 				)
 
@@ -331,16 +326,16 @@ func (s *Server) handleConn(conn net.Conn) {
 			default:
 			}
 
-			s.logger.Info(
-				"[server] close connection because of auth timeout",
+			logging.For("server").Info(
+				"close connection because of auth timeout",
 				"conn_id", synpConn.ID(),
 			)
 			return
 		case <-synpConn.Closed():
-			s.logger.Info("[server] synp connection has been closed")
+			logging.For("server").Info("synp connection has been closed")
 			return
 		case <-s.ctx.Done():
-			s.logger.Info("[server] server has been closed")
+			logging.For("server").Info("server has been closed")
 			return
 		}
 	}
@@ -362,8 +357,8 @@ func (s *Server) cleanIdleConn() {
 	ticker := time.NewTicker(scanInterval)
 	defer ticker.Stop()
 
-	s.logger.Debug(
-		"[server] idle connection cleaner started",
+	logging.For("server").Debug(
+		"idle connection cleaner started",
 		"scan_interval", scanInterval,
 		"shards", idleScanShards,
 		"idle_timeout", s.idleTimeout,
@@ -373,7 +368,7 @@ func (s *Server) cleanIdleConn() {
 	for {
 		select {
 		case <-s.ctx.Done():
-			s.logger.Info("[server] idle connection cleaner stopped by context done")
+			logging.For("server").Info("idle connection cleaner stopped by context done")
 			return
 		case <-ticker.C:
 			s.connManager.RangeConnsShard(shard%idleScanShards, idleScanShards, func(conn synp.Conn) bool {
@@ -398,21 +393,21 @@ func (s *Server) initConsumers() error {
 		case gateway.EventNotifyMessage:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[server] consumer not found", "event", key)
+				logging.For("server").Warn("consumer not found", "event", key)
 				continue
 			}
 			if err := consumer.StartConsumer(s.ctx, s.consumeNotifyMessage); err != nil {
-				s.logger.Error("[server] failed to start notify message consumer", "error", err)
+				logging.For("server").Error("failed to start notify message consumer", "error", err)
 				return err
 			}
 		case gateway.EventScaleUp:
 			consumer, ok := s.consumers[key]
 			if !ok {
-				s.logger.Warn("[server] consumer not found", "event", key)
+				logging.For("server").Warn("consumer not found", "event", key)
 				continue
 			}
 			if err := consumer.StartConsumer(s.ctx, s.consumeScaleUp); err != nil {
-				s.logger.Error("[server] failed to start scale up consumer", "error", err)
+				logging.For("server").Error("failed to start scale up consumer", "error", err)
 				return err
 			}
 		}
@@ -433,8 +428,8 @@ func (s *Server) consumeNotifyMessage(ctx context.Context, msg *xmq.Message) err
 	notifyMsg := &messagev1.NotifyMessage{}
 	// 后端 ( 业务服务端 ) 投递到通知 topic 的记录使用 protojson 编码。
 	if err := protojson.Unmarshal(msg.Val, notifyMsg); err != nil {
-		s.logger.Error(
-			"[server] failed to unmarshal notify message",
+		logging.For("server").Error(
+			"failed to unmarshal notify message",
 			"message", string(msg.Val),
 			"error", err,
 		)
@@ -448,8 +443,8 @@ func (s *Server) consumeNotifyMessage(ctx context.Context, msg *xmq.Message) err
 	if !ok {
 		// 本节点无该用户连接，忽略。
 		// 广播模型下其它节点会向其本地连接下发。
-		s.logger.Debug(
-			"[server] receiver not on this node, ignore notify message",
+		logging.For("server").Debug(
+			"receiver not on this node, ignore notify message",
 			"business_id", notifyMsg.GetBusinessId(),
 			"receiver_id", notifyMsg.GetReceiverId(),
 		)
@@ -457,8 +452,8 @@ func (s *Server) consumeNotifyMessage(ctx context.Context, msg *xmq.Message) err
 	}
 
 	if err := s.connHandler.OnReceiveFromBackend(ctx, conns, notifyMsg); err != nil {
-		s.logger.Error(
-			"[server] failed to handle on receive from backend event",
+		logging.For("server").Error(
+			"failed to handle on receive from backend event",
 			"message", string(msg.Val),
 			"error", err,
 		)
@@ -475,9 +470,9 @@ func (s *Server) consumeScaleUp(_ context.Context, _ *xmq.Message) error {
 
 // Shutdown 关闭 WebSocket 服务器。
 func (s *Server) Shutdown() error {
-	s.logger.Info("[server] shutting down ws server")
+	logging.For("server").Info("shutting down ws server")
 	s.cancelFunc()
-	s.logger.Info("[server] ws server shut down")
+	logging.For("server").Info("ws server shut down")
 	return nil
 }
 
@@ -487,13 +482,13 @@ func (s *Server) Shutdown() error {
 // -> 强制关闭剩余连接 -> 取消服务器 context。
 // 注意不能先等待 ctx.Done 再取消 ctx——那会永久阻塞 ( 自锁 )。
 func (s *Server) GracefulShutdown() error {
-	s.logger.Info("[server] graceful shutting down ws server")
+	logging.For("server").Info("graceful shutting down ws server")
 
 	// 1. 停止接受新连接。
 	s.acceptNewConn.Store(false)
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
-			s.logger.Warn("[server] failed to close net listener", "error", err)
+			logging.For("server").Warn("failed to close net listener", "error", err)
 		}
 	}
 
@@ -511,8 +506,8 @@ func (s *Server) GracefulShutdown() error {
 
 	// 4. 关闭排空超时后仍存活的连接。
 	if remained := s.connManager.ConnCount(); remained > 0 {
-		s.logger.Info(
-			"[server] drain timeout exceeded, closing remaining connections",
+		logging.For("server").Info(
+			"drain timeout exceeded, closing remaining connections",
 			"count", remained,
 		)
 		s.connManager.RangeConns(func(conn synp.Conn) bool {
@@ -531,8 +526,8 @@ func (s *Server) stopConsumers() {
 
 	for event, consumer := range s.consumers {
 		if err := consumer.StopConsumer(ctx); err != nil {
-			s.logger.Warn(
-				"[server] failed to stop consumer",
+			logging.For("server").Warn(
+				"failed to stop consumer",
 				"event", event,
 				"error", err,
 			)

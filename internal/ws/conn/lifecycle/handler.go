@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jrmarcco/synp"
@@ -45,8 +44,6 @@ type Handler struct {
 	uMsgHandlerMap map[commonv1.CommandType]upstream.UMsgHandler
 
 	connRegistry synp.ConnRegistry
-
-	logger *slog.Logger
 }
 
 func NewHandler(
@@ -74,8 +71,6 @@ func NewHandler(
 		nMsgHandler:    nMsgHandler,
 		uMsgHandlerMap: uMsgHandlerMap,
 		connRegistry:   connRegistry,
-
-		logger: logging.For("conn-lifecycle"),
 	}
 }
 
@@ -83,8 +78,8 @@ func NewHandler(
 // 注意：路由注册不在连接建立时进行，
 // 而是在首帧 AUTH 鉴权通过后 ( 由 AuthMsgHandler 完成 )。
 func (h *Handler) OnConnect(conn synp.Conn) error {
-	h.logger.Debug(
-		"[conn-lifecycle-handler] connection connected, waiting for auth",
+	logging.For("conn-lifecycle-handler").Debug(
+		"connection connected, waiting for auth",
 		"conn_id", conn.ID(),
 	)
 	return nil
@@ -96,8 +91,8 @@ func (h *Handler) OnDisconnect(conn synp.Conn) error {
 	select {
 	case <-conn.Authenticated():
 	default:
-		h.logger.Debug(
-			"[conn-lifecycle-handler] anonymous connection disconnected",
+		logging.For("conn-lifecycle-handler").Debug(
+			"anonymous connection disconnected",
 			"conn_id", conn.ID(),
 		)
 		return conn.Close()
@@ -111,16 +106,16 @@ func (h *Handler) OnDisconnect(conn synp.Conn) error {
 
 	if err := h.connRegistry.Unregister(ctx, user, conn.ID()); err != nil {
 		// 注销失败不影响连接关闭，只记录日志。
-		h.logger.Error(
-			"[conn-lifecycle-handler] failed to unregister connection",
+		logging.For("conn-lifecycle-handler").Error(
+			"failed to unregister connection",
 			"conn_id", conn.ID(),
 			"user", user,
 			"error", err,
 		)
 	}
 
-	h.logger.Debug(
-		"[conn-lifecycle-handler] connection disconnected and unregistered",
+	logging.For("conn-lifecycle-handler").Debug(
+		"connection disconnected and unregistered",
 		"conn_id", conn.ID(),
 	)
 	return conn.Close()
@@ -131,8 +126,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	// 解析 payload。
 	msg, err := h.decodePayload(payload)
 	if err != nil {
-		h.logger.Error(
-			"[conn-lifecycle-handler] failed to decode payload",
+		logging.For("conn-lifecycle-handler").Error(
+			"failed to decode payload",
 			"conn_id", conn.ID(),
 			"user", conn.Session().User(),
 			"error", err,
@@ -142,8 +137,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 
 	// 鉴权守卫：鉴权完成前网关拒绝处理任何非 AUTH 指令。
 	if msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_AUTH && !h.authenticated(conn) {
-		h.logger.Warn(
-			"[conn-lifecycle-handler] reject message before authentication",
+		logging.For("conn-lifecycle-handler").Warn(
+			"reject message before authentication",
 			"conn_id", conn.ID(),
 			"command_type", msg.GetCommandType().String(),
 		)
@@ -163,8 +158,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		msg.GetCommandType() != commonv1.CommandType_COMMAND_TYPE_CONVERSATION_SYNC {
 		ok, cacheErr := h.cacheMessage(user.BID, user.UID, msg)
 		if cacheErr != nil {
-			h.logger.Error(
-				"[conn-lifecycle-handler] failed to cache message",
+			logging.For("conn-lifecycle-handler").Error(
+				"failed to cache message",
 				"conn_id", conn.ID(),
 				"user", user,
 				"error", cacheErr,
@@ -173,8 +168,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		}
 
 		if !ok {
-			h.logger.Warn(
-				"[conn-lifecycle-handler] message duplicated, ignore it",
+			logging.For("conn-lifecycle-handler").Warn(
+				"message duplicated, ignore it",
 				"conn_id", conn.ID(),
 				"message_id", msg.GetMessageId(),
 				"user", user,
@@ -186,8 +181,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	// 热路径日志降级: 只记录元数据，不序列化完整消息体。
 	metrics.MsgInTotal.WithLabelValues(msg.GetCommandType().String()).Inc()
 
-	h.logger.Debug(
-		"[conn-lifecycle-handler] received message from frontend",
+	logging.For("conn-lifecycle-handler").Debug(
+		"received message from frontend",
 		"conn_id", conn.ID(),
 		"message_id", msg.GetMessageId(),
 		"command_type", msg.GetCommandType().String(),
@@ -198,8 +193,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 	// 处理消息。
 	uMsgHandler, ok := h.uMsgHandlerMap[msg.GetCommandType()]
 	if !ok {
-		h.logger.Error(
-			"[conn-lifecycle-handler] unknown message type from frontend",
+		logging.For("conn-lifecycle-handler").Error(
+			"unknown message type from frontend",
 			"conn_id", conn.ID(),
 			"user", user,
 		)
@@ -211,8 +206,8 @@ func (h *Handler) OnReceiveFromFrontend(conn synp.Conn, payload []byte) error {
 		if h.needUncacheMessage(err) {
 			uncacheErr := h.uncacheMessage(user.BID, user.UID, msg)
 			if uncacheErr != nil {
-				h.logger.Error(
-					"[conn-lifecycle-handler] failed to uncache message",
+				logging.For("conn-lifecycle-handler").Error(
+					"failed to uncache message",
 					"conn_id", conn.ID(),
 					"message", msg.String(),
 					"error", uncacheErr,

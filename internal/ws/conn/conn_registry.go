@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -71,8 +70,6 @@ type ConnRegistry struct {
 	node      synp.ConnNode
 	ttl       time.Duration
 	keyPrefix string
-
-	logger *slog.Logger
 }
 
 func ConnRegistryWithTTL(ttl time.Duration) option.Opt[ConnRegistry] {
@@ -94,8 +91,6 @@ func NewConnRegistry(rdb redis.Cmdable, node synp.ConnNode, opts ...option.Opt[C
 		node:      node,
 		ttl:       defaultTTL,
 		keyPrefix: defaultKeyPrefix,
-
-		logger: logging.For("conn.registry"),
 	}
 
 	option.Apply(registry, opts...)
@@ -129,8 +124,8 @@ func (r *ConnRegistry) Register(ctx context.Context, user session.User, connID s
 	member := encodeNodeMember(r.node, connID)
 	res, err := connRegisterScript.Run(ctx, r.rdb, []string{key}, expireAtMillis, member, ttlMillis).Result()
 	if err != nil {
-		r.logger.Error(
-			"[conn-registry] failed to register connection",
+		logging.For("conn-registry").Error(
+			"failed to register connection",
 			"key", key,
 			"conn_id", connID,
 			"service_name", r.node.ServiceName,
@@ -160,8 +155,8 @@ func (r *ConnRegistry) Unregister(ctx context.Context, user session.User, connID
 
 	key := r.key(user.BID, user.UID)
 	if err := r.rdb.ZRem(ctx, key, encodeNodeMember(r.node, connID)).Err(); err != nil {
-		r.logger.Error(
-			"[conn-registry] failed to unregister connection",
+		logging.For("conn-registry").Error(
+			"failed to unregister connection",
 			"key", key,
 			"conn_id", connID,
 			"service_name", r.node.ServiceName,
@@ -189,8 +184,8 @@ func (r *ConnRegistry) FindNodes(ctx context.Context, bid, uid uint64) ([]synp.C
 	// 避免客户端侧 pipeline 的并发窗口与额外往返。
 	res, err := connFindNodesScript.Run(ctx, r.rdb, []string{key}, now).Result()
 	if err != nil {
-		r.logger.Error(
-			"[conn-registry] failed to find nodes",
+		logging.For("conn-registry").Error(
+			"failed to find nodes",
 			"key", key,
 			"error", err,
 		)

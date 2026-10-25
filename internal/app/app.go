@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jrmarcco/synp/internal/pkg/logging"
 
 	"github.com/jrmarcco/synp"
 	"github.com/jrmarcco/xgrpc/register"
@@ -27,8 +28,6 @@ type app struct {
 	grpcRegisterTimeout time.Duration
 
 	webSocketServer synp.Server
-
-	logger *slog.Logger
 }
 
 func (app *app) Start(ctx context.Context) (err error) {
@@ -42,17 +41,17 @@ func (app *app) Start(ctx context.Context) (err error) {
 		}
 		if webSocketStarted {
 			if stopErr := app.webSocketServer.GracefulShutdown(); stopErr != nil {
-				app.logger.Warn("[app] failed to rollback ws server", "error", stopErr)
+				logging.For("app").Warn("failed to rollback ws server", "error", stopErr)
 			}
 		}
 		if grpcRegistered {
 			if unregisterErr := app.unregisterGrpc(ctx); unregisterErr != nil {
-				app.logger.Warn("[app] failed to rollback grpc registration", "error", unregisterErr)
+				logging.For("app").Warn("failed to rollback grpc registration", "error", unregisterErr)
 			}
 		}
 		if grpcStarted {
 			if stopErr := app.stopGrpc(); stopErr != nil {
-				app.logger.Warn("[app] failed to rollback grpc server", "error", stopErr)
+				logging.For("app").Warn("failed to rollback grpc server", "error", stopErr)
 			}
 		}
 	}()
@@ -117,11 +116,11 @@ func (app *app) startGrpc(ctx context.Context) error {
 
 	go func() {
 		if serveErr := app.grpcServer.Serve(ln); serveErr != nil && !isExpectedGRPCServeErr(serveErr) {
-			app.logger.Error("[app] grpc serve exited with error", "error", serveErr)
+			logging.For("app").Error("grpc serve exited with error", "error", serveErr)
 		}
 	}()
 
-	app.logger.Info("[app] grpc server started")
+	logging.For("app").Info("grpc server started")
 	return nil
 }
 
@@ -156,7 +155,7 @@ func (app *app) registerGrpc(ctx context.Context) error {
 		return err
 	}
 
-	app.logger.Info("[app] grpc service registered", "service_instance", app.grpcServiceInstance)
+	logging.For("app").Info("grpc service registered", "service_instance", app.grpcServiceInstance)
 	return nil
 }
 
@@ -175,7 +174,7 @@ func (app *app) startWebSocket() error {
 	if err := app.webSocketServer.Start(); err != nil {
 		return fmt.Errorf("[app] failed to start ws server: %w", err)
 	}
-	app.logger.Info("[app] ws server started")
+	logging.For("app").Info("ws server started")
 	return nil
 }
 

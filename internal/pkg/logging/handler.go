@@ -48,12 +48,12 @@ var _ slog.Handler = (*ConsoleHandler)(nil)
 //
 // 整行拼装完成后一次写入; color 控制是否输出 ANSI 着色 ( 终端实例开、文件实例关 )。
 type ConsoleHandler struct {
+	// mu 串行化本实例的底层 Write，保证多 goroutine 并发时行不交错。
+	mu sync.Mutex
+
 	w     io.Writer
 	level slog.Leveler
 	color bool
-
-	// mu 串行化本实例的底层 Write，保证多 goroutine 并发时行不交错。
-	mu sync.Mutex
 
 	attrs  []slog.Attr
 	groups []string

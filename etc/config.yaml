@@ -10,7 +10,13 @@ synp:
   # mode:  dev ( 单行紧凑格式 ) | prod ( JSON，面向采集 )
   # level: debug | info | warn | error
   # color: auto | always | never ( 仅 dev 生效 )
-  # file:  可选追加写日志文件路径
+  # file:  可选落盘段 ( 路径 + 轮转参数，lumberjack 按大小切割 ):
+  #   file:
+  #     path: /var/log/synp/synp.log
+  #     max_size_mb: 100    # 单文件上限，超过切割
+  #     max_backups: 7      # 保留旧文件份数 ( 0 保留全部 )
+  #     max_age_days: 30    # 旧文件保留天数 ( 0 不限 )
+  #     compress: true      # 旧文件 gzip 压缩
   log:
     mode: dev
     level: info
@@ -120,7 +126,8 @@ jwt:
   # 受众，固定为网关服务标识，防止为其它用途签发的 token 被重放到网关连接上。
   audience: synp-gateway
   # JWKS 端点，公钥定期拉取并缓存，token header 的 kid 用于密钥轮换。
-  jwks_endpoint: http://192.168.3.3:8080/.well-known/jwks.json
+  # 指向 backend ( hermet ) 的 web 端口。
+  jwks_endpoint: http://192.168.3.3:10081/.well-known/jwks.json
   refresh_interval: 10m
 
 etcd:

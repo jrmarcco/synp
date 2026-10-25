@@ -26,6 +26,7 @@ require (
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

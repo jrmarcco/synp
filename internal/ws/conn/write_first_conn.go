@@ -3,7 +3,6 @@ package conn
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -72,8 +71,6 @@ type WriteFirstConn struct {
 
 	closeOnce sync.Once
 	closeErr  error
-
-	logger *slog.Logger
 }
 
 func NewWriteFirstConn(
@@ -114,8 +111,6 @@ func NewWriteFirstConn(
 
 		ctx:        ctx,
 		cancelFunc: cancel,
-
-		logger: logging.For("write-first-conn"),
 	}
 
 	option.Apply(c, opts...)
@@ -180,16 +175,16 @@ func (c *WriteFirstConn) writeFirstLoop() {
 
 			var wsErr wsutil.ClosedError
 			if errors.As(err, &wsErr) && (wsErr.Code == ws.StatusNoStatusRcvd) || (wsErr.Code == ws.StatusGoingAway) {
-				c.logger.Info(
-					"[write-first-conn] client closed connection",
+				logging.For("write-first-conn").Info(
+					"client closed connection",
 					"conn_id", c.id,
 					"user", c.Session().User(),
 				)
 				return
 			}
 
-			c.logger.Error(
-				"[write-first-conn] failed to read message from client",
+			logging.For("write-first-conn").Error(
+				"failed to read message from client",
 				"conn_id", c.id,
 				"error", err,
 			)
@@ -225,8 +220,8 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 			return true
 		}
 
-		c.logger.Error(
-			"[read-write-conn] failed to send message to client",
+		logging.For("read-write-conn").Error(
+			"failed to send message to client",
 			"conn_id", c.id,
 			"user", c.Session().User(),
 			"error", err,
@@ -252,8 +247,8 @@ func (c *WriteFirstConn) trySend(payload []byte) bool {
 	}
 
 	// 重试达到上限。
-	c.logger.Error(
-		"[read-write-conn] failed to send message to client, retry reach max",
+	logging.For("read-write-conn").Error(
+		"failed to send message to client, retry reach max",
 		"conn_id", c.id,
 		"user", c.Session().User(),
 	)
@@ -332,8 +327,8 @@ func (c *WriteFirstConn) TryCloseIfIdle(idleTimeout time.Duration) bool {
 
 	if err := c.Close(); err != nil {
 		// 关闭直白只记录日志。
-		c.logger.Error(
-			"[conn] failed to close connection",
+		logging.For("conn").Error(
+			"failed to close connection",
 			"conn_id", c.id,
 			"user", c.Session().User(),
 			"error", err,
