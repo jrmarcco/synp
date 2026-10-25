@@ -39,7 +39,7 @@ if [ ! -f "./.env" ]; then
 KAFKA_CLUSTER_ID=${CLUSTER_ID}
 KAFKA_EXTERNAL_IP=${EXTERNAL_IP}
 KAFKA_TLS_KEY_PASSWORD=kafka-secret
-KAFKA_IMAGE=apache/kafka:4.0.0
+KAFKA_IMAGE=apache/kafka:4.4.0
 KAFKA_UI_IMAGE=provectuslabs/kafka-ui:v0.7.2
 KAFKA_UI_USER=admin
 KAFKA_UI_PASSWORD=change-me
