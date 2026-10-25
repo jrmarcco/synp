@@ -143,9 +143,9 @@ etcd:
     - 192.168.3.3:12379
     - 192.168.3.3:22379
     - 192.168.3.3:32379
-  # 认证未启用 ( 服务器 etcd 尚未创建用户 ), 留空跳过认证。
-  # username: synp
-  # password: <passwd>
+  # etcd 认证用户 ( 服务注册与发现, 见 scripts/docker/etcd/docker-compose.yaml 尾部实例 )。
+  username: synp
+  password: <passwd>
   dial_timeout: 10s
   tls:
     enabled: true

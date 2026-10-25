@@ -7,7 +7,9 @@ x-etcd-common: &etcd-common
     # 就绪探测: 本节点 endpoint health。
     # server 证书 EKU 同时含 serverAuth/clientAuth, 可直接作客户端证书。
     # 注意: coreos/etcd 为 distroless 镜像 ( 无 shell ), 必须用 exec 数组形式。
-    test: ["CMD", "etcdctl", "--endpoints=https://localhost:2379", "--cert=/etcd-certs/server.pem", "--key=/etcd-certs/server-key.pem", "--cacert=/etcd-certs/ca.pem", "endpoint", "health"]
+    # --user: 启用认证 ( 见文件尾 user-add 实例 ) 后匿名访问被拒,
+    # healthcheck 探测的 key ( "health" ) 不在业务角色授权前缀内, 需用 root。
+    test: ["CMD", "etcdctl", "--endpoints=https://localhost:2379", "--cert=/etcd-certs/server.pem", "--key=/etcd-certs/server-key.pem", "--cacert=/etcd-certs/ca.pem", "--user=root:<passwd>", "endpoint", "health"]
     interval: 15s
     timeout: 10s
     retries: 10
@@ -78,20 +80,30 @@ services:
       - ./certs:/etcd-certs:ro
 
 # ================================ 初始化用户 ================================= #
-
-# 添加 root 角色 ( root 角色为 etcd 的特殊角色 - 超级管理员语义 )
-# ./etcdctl.sh role-add root
-
-# 添加 root 用户并授权
-# ./etcdctl.sh user-add root
-# ./etcdctl.sh user grant-role root root
-
-# 添加业务用户和角色
-# ./etcdctl.sh user-add app-user
-# ./etcdctl.sh role-add app-role-rw
-
-# 授权业务用户访问特定前缀的键
-# ./etcdctl.sh role grant-permission --prefix=true app-role-rw readwrite app/
-# ./etcdctl.sh user grant-role app-role-rw app-user
-
+# 实例操作: 启用认证, 创建网关与后端共用的服务注册/发现用户 synp/<passwd>。
+# ( etcdctl.sh 自动拼接 TLS 参数; 启用认证后的命令需前置 ETCD_PASSWORD )
+#
+# 1. root 用户 ( etcd 约定: auth enable 前必须存在; root 角色为内置超级管理员 )
+#    ./etcdctl.sh role-add root
+#    ./etcdctl.sh user-add root                    # 交互式输入密码
+#    ./etcdctl.sh user grant-role root root
+#
+# 2. 业务用户 synp 与角色: 网关/后端经此用户做服务注册与发现。
+#    注册 key 布局为 /<key_prefix>/<service>/<addr>, 两端 key_prefix 均为 synp
+#    ( gateway: etc/config.yaml 的 synp.grpc.registry.key_prefix ),
+#    故只需授权 /synp/ 前缀读写:
+#    ./etcdctl.sh user-add synp                    # 交互式输入密码
+#    ./etcdctl.sh role-add synp-rw
+#    ./etcdctl.sh role grant-permission --prefix=true synp-rw readwrite /synp/
+#    ./etcdctl.sh user grant-role synp synp-rw
+#
+# 3. 启用认证 ( 之后所有客户端必须携带凭据, 匿名访问被拒;
+#    本文件 healthcheck 已带 root 凭据, 无需额外处理 )
+#    ./etcdctl.sh auth-enable
+#
+# 4. 验证 ( 业务用户视角可读写, 匿名被拒 )
+#    ETCD_USER=synp ETCD_PASSWORD='<passwd>' ./etcdctl.sh get --prefix /synp/
+#
+# 客户端接入: gateway 在 etc/config.yaml 的 etcd.username/etcd.password
+# 填 synp / <passwd>; backend 同理。
 # ================================ 初始化用户 ================================= #
