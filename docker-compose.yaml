@@ -1,0 +1,65 @@
+# synp-gateway 容器编排 ( 镜像定义见 scripts/build/Dockerfile )。
+#
+# 常用命令:
+#   docker compose up -d             # 镜像不存在时自动构建并启动
+#   docker compose up -d --build     # 代码变更后强制重建
+#   SYNP_VERSION=v1.2.3 docker compose up -d --build
+#                                    # 版本化构建: 镜像 tag 与 /version 的 buildinfo 一致,
+#                                    # 也可用 make image 构建的同版本镜像直接启动
+#
+# 前置依赖 ( 均为外部服务, 本文件不负责拉起 ):
+#   - kafka 三节点 mTLS 集群: scripts/docker/kafka
+#   - etcd / redis / backend ( JWKS + SyncService ): backend 仓库
+#   - etc/config.yaml ( 配置不打包进镜像, 运行时只读挂载 )
+
+services:
+  synp:
+    build:
+      context: .
+      dockerfile: scripts/build/Dockerfile
+      args:
+        VERSION: ${SYNP_VERSION:-dev}
+        # 国内网络: GOPROXY=https://goproxy.cn,direct docker compose build
+        GOPROXY: "${GOPROXY:-}"
+    # 与 make image 的 tag 命名保持一致。
+    image: synp-gateway:${SYNP_VERSION:-dev}
+
+    container_name: synp-gateway
+    hostname: synp-gateway
+    restart: unless-stopped
+
+    # 与 kafka / etcd 等中间件复用外部网络 ( 需已存在, 由 scripts/docker/kafka/init.sh 创建 );
+    # 容器也可直接经宿主机 IP ( etc/config.yaml 中的 192.168.3.3 ) 访问各依赖。
+    networks:
+      - jrmarcco_net
+
+    ports:
+      # WebSocket 数据面 ( 客户端长连接入口 )。
+      - "${SYNP_WS_PORT:-10071}:10071"
+      # gRPC NotifyService ( backend 即时通知通道 )。
+      # 宿主机必须发布该端口, 保证 etc/config.yaml 的 synp.grpc.addr
+      # 广播地址 ( 192.168.3.3:50051 ) 从 backend 真实可达。
+      - "${SYNP_GRPC_PORT:-50051}:50051"
+      # 管理面 /metrics /healthz /readyz /version /debug/pprof。
+      # 默认只绑宿主机回环 ( pprof 暴露公网有信息泄露/DoS 风险 );
+      # 跨机 Prometheus 抓取时置 SYNP_ADMIN_BIND=0.0.0.0。
+      - "${SYNP_ADMIN_BIND:-127.0.0.1}:${SYNP_ADMIN_PORT:-9090}:9090"
+
+    volumes:
+      # 配置不打包进镜像, 运行时挂载; 联调可换 etc/config-joint.yaml。
+      - ${SYNP_CONFIG:-./etc/config.yaml}:/app/etc/config.yaml:ro
+
+    # SIGTERM 后网关需排空存量 WS 连接 ( shutdown_drain_timeout )
+    # 并 flush kafka, 宽限期避免 docker stop 默认 10s 硬杀截断排空。
+    # ( 健康探测沿用镜像内置 HEALTHCHECK: wget /healthz )
+    stop_grace_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  jrmarcco_net:
+    external: true
