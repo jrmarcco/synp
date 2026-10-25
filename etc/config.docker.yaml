@@ -1,0 +1,324 @@
+# synp-gateway 容器运行配置 ( 基于 etc/config.yaml, 面向 192.168.3.3 中间件集群 )。
+# 与原版的差异:
+# - etcd 未启用认证 ( 服务器尚未创建用户 ), username/password 注释掉
+# - etcd tls.server_name 置空: 服务器证书 SAN 为 node-1/2/3/localhost/192.168.3.3,
+#   置空后按 endpoint 主机名 ( 192.168.3.3 ) 校验
+# - etcd/kafka 内联证书已替换为服务器当前签发版本
+# - synp.grpc.addr 广播本机宿主机局域网 IP ( 192.168.3.127 )
+profile:
+  env: dev
+
+synp:
+  # 运维管理端口 ( /metrics + /debug/pprof )
+  admin:
+    addr: ":9090"
+
+  # 日志配置
+  # mode:  dev ( 单行紧凑格式 ) | prod ( JSON，面向采集 )
+  # level: debug | info | warn | error
+  # color: auto | always | never ( 仅 dev 生效 )
+  # file:  可选落盘段 ( 路径 + 轮转参数，lumberjack 按大小切割 ):
+  #   file:
+  #     path: /var/log/synp/synp.log
+  #     max_size_mb: 100    # 单文件上限，超过切割
+  #     max_backups: 7      # 保留旧文件份数 ( 0 保留全部 )
+  #     max_age_days: 30    # 旧文件保留天数 ( 0 不限 )
+  #     compress: true      # 旧文件 gzip 压缩
+  log:
+    mode: dev
+    level: info
+
+  # WebSocket 配置
+  websocket:
+    host: 0.0.0.0
+    port: 10071
+    # 连接建立后等待首帧 AUTH 的超时时间 ( 单位: 毫秒 )，
+    # 超时未鉴权的连接由网关关闭。
+    auth_timeout_ms: 15000
+
+    # 最大并发连接数 ( 0 使用默认值 50000 )。
+    max_connections: 50000
+
+    # 空闲连接扫描 ( 仅关闭启用了 x-auto-close 的连接 )。
+    idle_scan_interval: 30s
+    idle_timeout: 2m
+
+    # 优雅关闭时等待存量连接排空的超时时间。
+    shutdown_drain_timeout: 10s
+    compression:
+      enabled: true
+      # 服务端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
+      # 内存/CPU 吃紧 ( 超高并发 ) 的场景下可以调整为 13。
+      server_max_window_bits: 15
+      server_no_context_takeover: false
+      # 客户端压缩时使用的滑动窗口大小 取值范围: 8-15 = 2^8 - 2^15 = 256B - 32KB
+      client_max_window_bits: 15
+      client_no_context_takeover: false
+      level: 6
+      # 小于该大小的消息不压缩 ( 压缩开销高于收益 )。
+      min_compress_size: 256
+
+  grpc:
+    name: synp-gateway
+    # 广播本机宿主机局域网 IP ( Windows 主机, 容器 50051 已发布到宿主机 )。
+    addr: 192.168.3.127:50051
+    group: synp
+    registry:
+      key_prefix: synp
+      lease_ttl: 30 # 单位：秒 ( 这里和 etcd api 保持一直所以是秒单位 )
+      timeout: 10s
+
+  # 后端 SyncService 配置 ( 收件箱与会话的增量同步 )
+  sync_service:
+    service_name: synp-backend
+    insecure: true
+
+  # 编解码器配置 ( json / proto )
+  codec:
+    type: json
+
+  # 连接配置
+  conn:
+    # 连接注册表配置
+    registry:
+      ttl: 30m
+      cache_ttl: 400ms
+      empty_cache_ttl: 100ms
+      key_prefix: synp:conn:registry
+
+    # 连接生命周期处理器配置
+    handler:
+      cache_request_timeout: 10s
+      cache_expiration: 10s
+
+    # 连接管理器配置
+    manager:
+      # 鉴权前读超时 ( AUTH 超时兜底 )。
+      read_timeout: 15s
+      # 鉴权后读超时 ( 应用层心跳保活，长超时减少 deadline 唤醒 )。
+      established_read_timeout: 90s
+      write_timeout: 10s
+      init_retry_interval: 1s
+      max_retry_interval: 5s
+      max_retry_count: 3
+      send_buffer_size: 256
+      receive_buffer_size: 256
+      close_timeout: 1s
+      # 入站数据帧大小上限 ( 超限断连，防 OOM )，0 使用默认 64KiB。
+      max_message_bytes: 65536
+
+  # 消息处理器配置
+  message_handler:
+    frontend:
+      topic: synp.message.upstream
+      on_receive_timeout: 3s
+    sync:
+      timeout: 10s
+    notify:
+      # NOTIFY 帧发送入队等待上限，超时丢弃 ( 通知可丢 )。
+      enqueue_timeout: 200ms
+
+  # 网关事件消费者配置
+  gateway:
+    consumer:
+      # 通知消息消费者 ( 广播消费: group_id 会自动追加本节点地址 )
+      event_message_notify:
+        topic: synp.message.notify
+        group_id: synp-notify-consumer
+        partitions: 6
+        handle_timeout: 16s
+
+# 连接鉴权 JWT 配置 ( RS256 + JWKS )
+jwt:
+  issuer: synp-auth
+  # 受众，固定为网关服务标识，防止为其它用途签发的 token 被重放到网关连接上。
+  audience: synp-gateway
+  # JWKS 端点，公钥定期拉取并缓存，token header 的 kid 用于密钥轮换。
+  # 指向 backend ( hermet ) 的 web 端口。
+  jwks_endpoint: http://192.168.3.3:10081/.well-known/jwks.json
+  refresh_interval: 10m
+
+etcd:
+  endpoints:
+    - 192.168.3.3:12379
+    - 192.168.3.3:22379
+    - 192.168.3.3:32379
+  # 认证未启用 ( 服务器 etcd 尚未创建用户 ), 留空跳过认证。
+  # username: synp
+  # password: <passwd>
+  dial_timeout: 10s
+  tls:
+    enabled: true
+    # 置空则按 endpoint 主机名 ( 192.168.3.3 ) 校验, 命中服务器证书 IP SAN。
+    server_name: ""
+    insecure_skip_verify: false
+    cert_pem: |
+        -----BEGIN CERTIFICATE-----
+        MIICKzCCAd2gAwIBAgIUEjmgHvYV4TzV5Et1vDK/zdOTdDUwBQYDK2VwMF8xCzAJ
+        BgNVBAYTAkNOMRAwDgYDVQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0w
+        CwYDVQQKDARTeW5wMQswCQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAeFw0y
+        NjEwMjUwODQwMjRaFw0yNzEwMjUwODQwMjRaMHYxCzAJBgNVBAYTAkNOMRAwDgYD
+        VQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0wCwYDVQQKDARTeW5wMRkw
+        FwYDVQQLDBBzeW5wLWV0Y2QtY2xpZW50MRkwFwYDVQQDDBBzeW5wLWV0Y2QtY2xp
+        ZW50MCowBQYDK2VwAyEAsbnLZqgZ/Z140+F5wqP5PCyw+gcxIagBCUw6uuARE4ej
+        gZMwgZAwCQYDVR0TBAIwADALBgNVHQ8EBAMCBeAwEwYDVR0lBAwwCgYIKwYBBQUH
+        AwIwIQYDVR0RBBowGIIQc3lucC1ldGNkLWNsaWVudIcEfwAAATAdBgNVHQ4EFgQU
+        +GN/UsA6kpaIKGJ6YGeUwHSzPs0wHwYDVR0jBBgwFoAUPAoQHmlu+sNbwUVFTxv0
+        oFTSUWswBQYDK2VwA0EArTTGcPDPf1XovGQ2hoMlqu5dwKq859ghJFzh3DqtCDuY
+        faKGYVfAmw16CZoSOZ6Glpo+gLkol3EAwI+KibNYBw==
+        -----END CERTIFICATE-----
+
+    cert_key: |
+        -----BEGIN PRIVATE KEY-----
+        MC4CAQAwBQYDK2VwBCIEIBGK8JPhnwRWwcFgyqpLgQPG1qvpAuGGn6tqmSz6UcJO
+        -----END PRIVATE KEY-----
+
+    ca_cert: |
+        -----BEGIN CERTIFICATE-----
+        MIIB0zCCAYWgAwIBAgIUQCPlOhPPOkG7fJbaDpgxO3Vg3CQwBQYDK2VwMF8xCzAJ
+        BgNVBAYTAkNOMRAwDgYDVQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0w
+        CwYDVQQKDARTeW5wMQswCQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAeFw0y
+        NjEwMjUwODQwMjNaFw0yNzEwMjUwODQwMjNaMF8xCzAJBgNVBAYTAkNOMRAwDgYD
+        VQQIDAdCZWlqaW5nMRAwDgYDVQQHDAdCZWlqaW5nMQ0wCwYDVQQKDARTeW5wMQsw
+        CQYDVQQLDAJDQTEQMA4GA1UEAwwHZXRjZC1jYTAqMAUGAytlcAMhAF1BSIn2YVOl
+        WNl3DO7XsPUbK9+GshcASXBpcIgdSreio1MwUTAdBgNVHQ4EFgQUPAoQHmlu+sNb
+        wUVFTxv0oFTSUWswHwYDVR0jBBgwFoAUPAoQHmlu+sNbwUVFTxv0oFTSUWswDwYD
+        VR0TAQH/BAUwAwEB/zAFBgMrZXADQQBGsZoKiDNzqsf/ei9zRLS+KZ/AxzERgGaM
+        X1G2HPXn/rdvboHvJ0nBhXr3AZh/ecLPIa153C0GHSYJksxfH+EA
+        -----END CERTIFICATE-----
+
+# Redis 配置
+redis:
+  addr: 192.168.3.3:6379
+  password: <passwd>
+
+# Kafka 配置
+kafka:
+  # Kafka Broker
+  brokers:
+    - 192.168.3.3:19092
+    - 192.168.3.3:29092
+    - 192.168.3.3:39092
+
+  # Producer 配置
+  producer:
+    required_acks: -1            # all
+    compression: snappy          # 使用 snappy 压缩
+    max_message_bytes: 1024000   # 最大消息大小 1024000 字节 = 1MB
+    retry_max: 3                 # 最大重试次数 3
+    batch_size: 100              # 批量大小 100
+    batch_timeout: 10ms          # 批量超时 10ms
+    write_timeout: 10s           # 写入超时 10s
+    idempotent_enabled: true     # 启用幂等性
+
+  # Consumer 配置
+  consumer:
+    read_timeout: 10s            # 读取超时 10s
+    commit_interval: 1s          # 每秒提交一次
+    start_offset: -1             # 从最新消息开始 ( kafka.LastOffset )
+    min_bytes: 1                 # 最小 1 字节
+    max_bytes: 10e6              # 最大 10MB
+    max_wait: 500ms              # 最大等待 500ms
+
+  # TLS 配置
+  tls:
+    # 必填: CA 证书文件路径
+    ca_cert: |
+        -----BEGIN CERTIFICATE-----
+        MIIDqTCCApGgAwIBAgIUd2T8M16jTAGov7FRwCFe5XJfqG8wDQYJKoZIhvcNAQEL
+        BQAwZDERMA8GA1UEAwwIa2Fma2EtY2ExDjAMBgNVBAsMBUthZmthMQ4wDAYDVQQK
+        DAVLYWZrYTEQMA4GA1UEBwwHQmVpamluZzEQMA4GA1UECAwHQmVpamluZzELMAkG
+        A1UEBhMCQ04wHhcNMjYxMDI1MDgzNjQxWhcNMzYxMDIyMDgzNjQxWjBkMREwDwYD
+        VQQDDAhrYWZrYS1jYTEOMAwGA1UECwwFS2Fma2ExDjAMBgNVBAoMBUthZmthMRAw
+        DgYDVQQHDAdCZWlqaW5nMRAwDgYDVQQIDAdCZWlqaW5nMQswCQYDVQQGEwJDTjCC
+        ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALSyP5YqEXd04w4MPaQvWCBU
+        mAsPCEXthtva0z74+s4ntyhNu8u8lpX5rE3qvwaQny2aSxohg6xv/J/vemYgaxEV
+        QaNUIrUBRkXl4lAaOkBZI+6+kURec69Rd3ilyo9RoxfCTgtHapIp4XfJeFnHpUnF
+        IJ8Q0h2mxnYgK/vu0QuQljvoUtJxS6xmVy2guMwSbPHW6sCgSEDfjfV3nMgyaidC
+        UHjsVNF8YJxaYvvmHYGBcRZk9WF+C7T/JDGKqOkHpV7pf9OnBlLTT3Vxnldz4ljd
+        2/xf2v94U3eUe69OH1H451f9aqUVshLl6xrQNBhTJNkap0rHOeQm3/n+C1aGOEUC
+        AwEAAaNTMFEwHQYDVR0OBBYEFJrAgMjQbs0z7huNCVmLBIklx9XNMB8GA1UdIwQY
+        MBaAFJrAgMjQbs0z7huNCVmLBIklx9XNMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+        hvcNAQELBQADggEBAC5jvVio4xmzm1rxR8934ie2xd89qQhHoCFFZQtmkgYxljQZ
+        8d0HQyJoMRXem1t3PKX+4bl5yAlgClYmnN5FmFHVKpUTMszs9IDve7aRp/cIlBs/
+        hveKAO+BD1cnTH41Gg8W3B8Nv0O/2WDFasznspfBG4DahYM6dp8GV9OAx/9+cpHl
+        1CvaqSKtuNPAkF43bK6MpyNt3d0ix5ZxocmjFtbE8niOSWuBX2eWJbNCVhiR0/d4
+        raUxUL8oRSyG9tCtSwDR0jKGNlqEsope7fj9vNLoIxAmGZyqoQAVuw/3STNJcEg+
+        pF6302itsFD7hxzvm5zb2MPagmOdY3wC9Q2BNDg=
+        -----END CERTIFICATE-----
+
+    cert_key: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDQHo6oGgqYQ8d7
+        jK2jzlTYq5Tc4bUVyy4EWWjYtYxGw+wanrjrsOolG5UPSG1V72VwJPpVwwbPEqSU
+        vSHh5C2rWLLqtAJ0p8mFXY3Q/hq35bUdZoE55Scx5tGC5Ew9zjYZ/PNUYIezaBIr
+        hPjL6nDnU7GFVWDY77pFBSW9wJCR03sSk6W9e5C5waJeXMitJFj1Ln0grAUGpKso
+        Q+OZyYWK1Zth15KvNWWxvQdOT7CIQq+nUxjFhgDsSuuUOL3RJemmhjaJnZHPKcci
+        9cFmF7neLEzpjxVO9oUSbTrI3BtKBiA7g2E9CNWzNDyXGBPdGJpWsGK1A56OLhXA
+        5zkvUTaLAgMBAAECggEABJNLnSrK3qAW14Kpw9wYmfPjuOxCo+bpPgYT6ubl0ALG
+        wu5tNqNhhp3zg1ZyqA93pm8+u45c9vUyBMO6NumzIujz7SnzNVguIkKCvlP1RDRa
+        xC99uFSykpQ5smU8e9tc4C1+IheJm8blXULUbnh8nV2F7nlFJdkNQQarrlGuc4wg
+        CuNE+gdmdUhRqBXHGiZ5iJfs84ldiDIM4tAbA4Vx5LLIt5bVqaWBba6A1nkVUvOw
+        uRwOhEI2ukrVYqeiUVLXm4Y+81a9wjzUQmWRmftT2dnuPg7MsYDZoqE60k6ECATm
+        hfsGMiMz1YJUXQpy3J5fjlYn5sCSz9Jx5X8+pbPuOQKBgQDZNd/gh7oUK0Zepxha
+        bPb7HltxVjMTTxnNhEvng0VMbOHg+7aXcUkC9tTFJhA2N8MUklPTENPs71RQBUjp
+        ZrpORjTv+ANnbwfiEed2AZwdIEMtiRPMZEZk6lHcz6FvfJ4s09QvF69TNv5VC6ME
+        +VKW8HjVbMadzzLap7cq+fdRFQKBgQD1SRG4zbL2DYQMEUrz72rMGeDAkZYlezSQ
+        aUeRztIJ9aESAPyddBE6HGQfHvnQ/1yHkp5v/AffP6vhU/i3+cVIRNcpilWtAJ0U
+        Shpi7RqGkMM0MhJNHi8m3FOq7RF7kxxn3OciRCYD+M9sm7manmO+Y6i6uoO9tX2a
+        0B4HLQwRHwKBgQClS4NYadFoYdpGU6CLx9pYFaz+3ds2eX6oUGI3B0WoOD/Yp5U3
+        QEWQlOgsM6AoslypfgV+XJL5/tNJpgvrWnqy8Gh+qV1lzC/SkU90FRuJarDUqTlA
+        1JphV5P+lp9CqTHx6S3SvJJ2oCYB8D4ZneaE6PD7cbDgDPqlPPZ+JQVZVQKBgQCe
+        0lBCTBa70WaV9cCFkJmjTIJFzj7dSBhyBWlNFRDVWBGSOcdYIGZjLSz7JbB2TlLY
+        iexC8HscZ/rgLOIYJgdC0yhKgoMVQRd0osLRGVualDOBIYbOHmRDklgujdBLJqc2
+        7UdP3baLzdhpJ7AXWMWW6qq/NbPF67VHv8ght15f2wKBgQCcYx4UQUVWF7KpqDlZ
+        YVuUPgmfZM0X7ZFVMQpcJojd5hn57ky/NJevEzKvhxoAL20GCrOMBLEtiGzFSLMj
+        EO5qa9fiBXbdZeUh+zOk6V+G0GM24muFzrtdSqDTFBY5Lnsjw45pKxdSTV4ww9lf
+        zk9YkiYEEtSROpMQn+uJ2WClSg==
+        -----END PRIVATE KEY-----
+
+    cert_pem: |
+        -----BEGIN CERTIFICATE-----
+        MIIDnDCCAoSgAwIBAgIUP7KM1K0aXbBRmpNDkwhcBxxOTpEwDQYJKoZIhvcNAQEL
+        BQAwZDERMA8GA1UEAwwIa2Fma2EtY2ExDjAMBgNVBAsMBUthZmthMQ4wDAYDVQQK
+        DAVLYWZrYTEQMA4GA1UEBwwHQmVpamluZzEQMA4GA1UECAwHQmVpamluZzELMAkG
+        A1UEBhMCQ04wHhcNMjYxMDI1MDgzNjQyWhcNMzYxMDIyMDgzNjQyWjBoMQswCQYD
+        VQQGEwJDTjEQMA4GA1UECBMHQmVpamluZzEQMA4GA1UEBxMHQmVpamluZzEOMAwG
+        A1UEChMFS2Fma2ExDjAMBgNVBAsTBUthZmthMRUwEwYDVQQDEwxrYWZrYS1jbGll
+        bnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQHo6oGgqYQ8d7jK2j
+        zlTYq5Tc4bUVyy4EWWjYtYxGw+wanrjrsOolG5UPSG1V72VwJPpVwwbPEqSUvSHh
+        5C2rWLLqtAJ0p8mFXY3Q/hq35bUdZoE55Scx5tGC5Ew9zjYZ/PNUYIezaBIrhPjL
+        6nDnU7GFVWDY77pFBSW9wJCR03sSk6W9e5C5waJeXMitJFj1Ln0grAUGpKsoQ+OZ
+        yYWK1Zth15KvNWWxvQdOT7CIQq+nUxjFhgDsSuuUOL3RJemmhjaJnZHPKcci9cFm
+        F7neLEzpjxVO9oUSbTrI3BtKBiA7g2E9CNWzNDyXGBPdGJpWsGK1A56OLhXA5zkv
+        UTaLAgMBAAGjQjBAMB0GA1UdDgQWBBS6i/igcwKDUN1Gz+iLQJS+whvjhzAfBgNV
+        HSMEGDAWgBSawIDI0G7NM+4bjQlZiwSJJcfVzTANBgkqhkiG9w0BAQsFAAOCAQEA
+        DRIPiLKjrMnpKpPf0BV3K5vLhHRuyw5ZmwrUl6sFHH1XzR3F0OSU4M8bzpEAvyU8
+        0SF1FE0n2imAJ/u1rcV2tX5PUutEE3oQ8XjwiVHOuO5iiR55CSl+cMQNhJgCE+3f
+        oUDQutJwvvXi5jA7XGIPCcWx1ozd1JZUZiwpXNxzOv26OL2VSlx42SoFtYmcmYrb
+        +W+bnVJG0gnd4g5uDevu9GuLXuD5/UxsAEPkbQe+rbmytmMtftnlXx7AaRDkZFVH
+        PZ0yQzzx5p2Lf4l/M1QK4T7xA76vRflfxUsYoyxXjQ5ANdKc6qh28CQ/IIqTqjKi
+        kyB3eDgQdFqdMjUL57A1BQ==
+        -----END CERTIFICATE-----
+
+  # SASL 配置
+  # 支持两种认证机制：
+  # 1. SCRAM-SHA-256
+  # 2. OAUTHBEARER
+  # sasl:
+    # 可选：认证机制类型 ( "" / oauth / scram 默认为 "" )
+    # mechanism: oauth
+
+    # SCRAM 认证配置 ( 当 mechanism 为 scram 或未设置时使用 )
+    # username: synp
+    # password: synp-secret
+    # 建议使用环境变量存储密码
+    # password: ${KAFKA_PASSWORD}
+
+    # OAuth 认证配置 ( 当 mechanism 为 oauth 时使用 )
+    # oauth:
+    #   endpoint: http://192.168.3.3:18080/realms/kafka/protocol/openid-connect/token
+    #   client_id: kafka-client
+    #   client_secret: b7rQYTc0y3eqDkGXFYD2UIPjYJeFCaAC
+      # 建议使用环境变量存储敏感信息
+      # client_secret: ${KAFKA_OAUTH_CLIENT_SECRET}

@@ -1,11 +1,42 @@
 # synp-gateway 容器编排 ( 镜像定义见 scripts/build/Dockerfile )。
 #
-# 常用命令:
+# ================================ 镜像构建 ================================
+# 本地构建 ( 二选一 ):
+#   make image                                 # tag = git describe, 经 ldflags 注入版本
+#   SYNP_VERSION=v1.2.3 docker compose build   # tag = synp-gateway:v1.2.3, buildinfo 同源
+#   ( 国内网络: GOPROXY=https://goproxy.cn,direct 加命令前缀 )
+#
+# ============================ 镜像推送 ( registry ) ============================
+# 镜像名 = ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}, 推仓库只需
+# SYNP_IMAGE 覆盖前缀, 无需修改本文件。
+#
+# Docker Hub:
+#   docker login
+#   SYNP_IMAGE=<dockerhub用户名>/synp-gateway SYNP_VERSION=v1.2.3 docker compose build
+#   SYNP_IMAGE=<dockerhub用户名>/synp-gateway SYNP_VERSION=v1.2.3 docker compose push
+#
+# 私有仓库 ( 自建 registry / Harbor / 云厂商镜像服务, 换成实际地址 ):
+#   docker login reg.example.com:5000
+#   SYNP_IMAGE=reg.example.com:5000/synp/gateway SYNP_VERSION=v1.2.3 docker compose build
+#   SYNP_IMAGE=reg.example.com:5000/synp/gateway SYNP_VERSION=v1.2.3 docker compose push
+#
+#   make image 的产物也可手工推送 ( 两步 ):
+#   docker tag synp-gateway:v1.2.3 reg.example.com:5000/synp/gateway:v1.2.3
+#   docker push  reg.example.com:5000/synp/gateway:v1.2.3
+#
+#   ( 注意: 自建 registry 走 HTTP 时, 需在 docker daemon 配置 insecure-registries )
+#
+# 部署机拉取运行 ( 不在部署机构建 ):
+#   SYNP_IMAGE=reg.example.com:5000/synp/gateway SYNP_VERSION=v1.2.3 \
+#     SYNP_CONFIG=./etc/config.prod.yaml docker compose up -d --pull always
+#   ( --pull always 强制走仓库, 避免部署机本地误构建 )
+#
+# 以上变量可写入本目录 .env 持久化 ( SYNP_IMAGE / SYNP_VERSION / SYNP_CONFIG /
+# GOPROXY ... ), 免去每次命令行前缀。
+#
+# ================================= 常用命令 =================================
 #   docker compose up -d             # 镜像不存在时自动构建并启动
 #   docker compose up -d --build     # 代码变更后强制重建
-#   SYNP_VERSION=v1.2.3 docker compose up -d --build
-#                                    # 版本化构建: 镜像 tag 与 /version 的 buildinfo 一致,
-#                                    # 也可用 make image 构建的同版本镜像直接启动
 #
 # 前置依赖 ( 均为外部服务, 本文件不负责拉起 ):
 #   - kafka 三节点 mTLS 集群: scripts/docker/kafka
@@ -21,11 +52,12 @@ services:
         VERSION: ${SYNP_VERSION:-dev}
         # 国内网络: GOPROXY=https://goproxy.cn,direct docker compose build
         GOPROXY: "${GOPROXY:-}"
-    # 与 make image 的 tag 命名保持一致。
-    image: synp-gateway:${SYNP_VERSION:-dev}
+    # 镜像名 = ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}: 默认与 make image
+    # 的 tag 命名保持一致; 推送/拉取仓库时用 SYNP_IMAGE 覆盖前缀 ( 见文件头说明 )。
+    image: ${SYNP_IMAGE:-synp-gateway}:${SYNP_VERSION:-dev}
 
-    container_name: synp-gateway
-    hostname: synp-gateway
+    container_name: synp
+    hostname: synp
     restart: unless-stopped
 
     # 与 kafka / etcd 等中间件复用外部网络 ( 需已存在, 由 scripts/docker/kafka/init.sh 创建 );
